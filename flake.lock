@@ -1,0 +1,236 @@
+{
+  "nodes": {
+    "dng_sdk": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1552452980,
+        "narHash": "sha256-lTtvBUGaia0jhrxpw7k7NIq2SVyGmBJPCvjIqAQCmNo=",
+        "rev": "c8d0c9b1d16bfda56f15165d39e0ffa360a11123",
+        "revCount": 168,
+        "type": "git",
+        "url": "https://android.googlesource.com/platform/external/dng_sdk.git"
+      },
+      "original": {
+        "rev": "c8d0c9b1d16bfda56f15165d39e0ffa360a11123",
+        "type": "git",
+        "url": "https://android.googlesource.com/platform/external/dng_sdk.git"
+      }
+    },
+    "expat": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1621785363,
+        "narHash": "sha256-TSaVtKEk7J0fckDvpI6/U5Aq7d37nsixp0Ft7sMHi8w=",
+        "owner": "libexpat",
+        "repo": "libexpat",
+        "rev": "a28238bdeebc087071777001245df1876a11f5ee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "libexpat",
+        "repo": "libexpat",
+        "rev": "a28238bdeebc087071777001245df1876a11f5ee",
+        "type": "github"
+      }
+    },
+    "flake-utils": {
+      "locked": {
+        "lastModified": 1622445595,
+        "narHash": "sha256-m+JRe6Wc5OZ/mKw2bB3+Tl0ZbtyxxxfnAWln8Q5qs+Y=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "7d706970d94bc5559077eb1a6600afddcd25a7c8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "gzip-hpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1606848607,
+        "narHash": "sha256-NTjighgmHJ5eV/4D6puSK6vcRttNasAjwbzW9kTdAjI=",
+        "owner": "mapbox",
+        "repo": "gzip-hpp",
+        "rev": "7546b35aba5917154a0e9ae43f804b57d22bb966",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mapbox",
+        "repo": "gzip-hpp",
+        "type": "github"
+      }
+    },
+    "harfbuzz": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1572378568,
+        "narHash": "sha256-/4UdoUj0bxj6+EfNE8ofjtWOn2VkseEfvdFah5rwwBM=",
+        "owner": "harfbuzz",
+        "repo": "harfbuzz",
+        "rev": "3a74ee528255cc027d84b204a87b5c25e47bff79",
+        "type": "github"
+      },
+      "original": {
+        "owner": "harfbuzz",
+        "repo": "harfbuzz",
+        "rev": "3a74ee528255cc027d84b204a87b5c25e47bff79",
+        "type": "github"
+      }
+    },
+    "icu": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1574444036,
+        "narHash": "sha256-voMH+TdNx3dBHeH5Oky5OYmmLGJ2u+WrMrmAkjXJRTE=",
+        "rev": "dbd3825b31041d782c5b504c59dcfb5ac7dda08c",
+        "revCount": 284,
+        "type": "git",
+        "url": "https://chromium.googlesource.com/chromium/deps/icu.git"
+      },
+      "original": {
+        "rev": "dbd3825b31041d782c5b504c59dcfb5ac7dda08c",
+        "type": "git",
+        "url": "https://chromium.googlesource.com/chromium/deps/icu.git"
+      }
+    },
+    "libjpeg-turbo": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1619459309,
+        "narHash": "sha256-bhbUnA36rKYLJSLpElmXJqccXQDjjbMcNMsVM4Eekrs=",
+        "ref": "master",
+        "rev": "24e310554f07c0fdb8ee52e3e708e4f3e9eb6e20",
+        "revCount": 166,
+        "type": "git",
+        "url": "https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git"
+      },
+      "original": {
+        "rev": "24e310554f07c0fdb8ee52e3e708e4f3e9eb6e20",
+        "type": "git",
+        "url": "https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git"
+      }
+    },
+    "libpng": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1556164634,
+        "narHash": "sha256-67kf5MBsnBBi0bOfX/RKL52xpaCWm/ampltAI+EeQ+c=",
+        "rev": "386707c6d19b974ca2e3db7f5c61873813c6fe44",
+        "revCount": 4068,
+        "type": "git",
+        "url": "https://skia.googlesource.com/third_party/libpng.git"
+      },
+      "original": {
+        "rev": "386707c6d19b974ca2e3db7f5c61873813c6fe44",
+        "type": "git",
+        "url": "https://skia.googlesource.com/third_party/libpng.git"
+      }
+    },
+    "libwebp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1611200625,
+        "narHash": "sha256-GxKKF2ws82WoKtYpV46dyhAgPcsjki/m/2cT9S/8Fj4=",
+        "ref": "master",
+        "rev": "fedac6cc69cda3e9e04b780d324cf03921fb3ff4",
+        "revCount": 4133,
+        "type": "git",
+        "url": "https://chromium.googlesource.com/webm/libwebp.git"
+      },
+      "original": {
+        "rev": "fedac6cc69cda3e9e04b780d324cf03921fb3ff4",
+        "type": "git",
+        "url": "https://chromium.googlesource.com/webm/libwebp.git"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1622622179,
+        "narHash": "sha256-XCw/9QDuj9J6prVR8YrteTcFKj2sRWYIjwgs8qOOrYQ=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "eaba7870ffc3400eca4407baa24184b7fe337ec1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-21.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "piex": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1520630939,
+        "narHash": "sha256-IhAfxlu0UmllihBP9wbg7idT8azlbb9arLKUaZ6qNxY=",
+        "rev": "bb217acdca1cc0c16b704669dd6f91a1b509c406",
+        "revCount": 87,
+        "type": "git",
+        "url": "https://android.googlesource.com/platform/external/piex.git"
+      },
+      "original": {
+        "rev": "bb217acdca1cc0c16b704669dd6f91a1b509c406",
+        "type": "git",
+        "url": "https://android.googlesource.com/platform/external/piex.git"
+      }
+    },
+    "root": {
+      "inputs": {
+        "dng_sdk": "dng_sdk",
+        "expat": "expat",
+        "flake-utils": "flake-utils",
+        "gzip-hpp": "gzip-hpp",
+        "harfbuzz": "harfbuzz",
+        "icu": "icu",
+        "libjpeg-turbo": "libjpeg-turbo",
+        "libpng": "libpng",
+        "libwebp": "libwebp",
+        "nixpkgs": "nixpkgs",
+        "piex": "piex",
+        "sfntly": "sfntly",
+        "zlib": "zlib"
+      }
+    },
+    "sfntly": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1541518739,
+        "narHash": "sha256-/zp1MsR31HehoC5OAI4RO8QBlm7mldQNiTI7Xr/LJeI=",
+        "owner": "googlei18n",
+        "repo": "sfntly",
+        "rev": "b55ff303ea2f9e26702b514cf6a3196a2e3e2974",
+        "type": "github"
+      },
+      "original": {
+        "owner": "googlei18n",
+        "repo": "sfntly",
+        "rev": "b55ff303ea2f9e26702b514cf6a3196a2e3e2974",
+        "type": "github"
+      }
+    },
+    "zlib": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1611966639,
+        "narHash": "sha256-mwozVo8ymyrYN4tw+/ZnSI+xogSTZQ6PUBba/jQqRkE=",
+        "ref": "master",
+        "rev": "c876c8f87101c5a75f6014b0f832499afeb65b73",
+        "revCount": 387,
+        "type": "git",
+        "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib"
+      },
+      "original": {
+        "rev": "c876c8f87101c5a75f6014b0f832499afeb65b73",
+        "type": "git",
+        "url": "https://chromium.googlesource.com/chromium/src/third_party/zlib"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

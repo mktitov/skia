@@ -5,18 +5,6 @@ with pkgs; mkShell {
 
   nativeBuildInputs = [ python2 gn ninja ];
 
-  propagatedBuildInputs = lib.optionals stdenv.isDarwin [ xcbuild ];
-
-  depsTargetTargetPropagated = with darwin.apple_sdk.frameworks; lib.optionals stdenv.isDarwin [
-    AppKit
-    ApplicationServices
-    Cocoa
-    Foundation
-    OpenGL
-    QuartzCore
-    # AVFoundation
-  ];
-
   # buildInputs = [ skottie_tool ];
   buildInputs = [ fontconfig libglvnd mesa xorg.libX11 ];
 

@@ -1,22 +1,10 @@
 { pkgs, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
 
-with pkgs; clang11Stdenv.mkDerivation {
+with pkgs; stdenv.mkDerivation {
   name = "skottie_tool";
   src = builtins.path { path = ./.; };
 
   nativeBuildInputs = [ python2 gn ninja ];
-
-  propagatedBuildInputs = lib.optionals stdenv.isDarwin [ xcbuild ];
-
-  depsTargetTargetPropagated = with darwin.apple_sdk.frameworks; lib.optionals stdenv.isDarwin [
-    AppKit
-    ApplicationServices
-    Cocoa
-    Foundation
-    OpenGL
-    QuartzCore
-    # AVFoundation
-  ];
 
   buildInputs = [ fontconfig libglvnd mesa xorg.libX11 ];
 
@@ -40,6 +28,9 @@ with pkgs; clang11Stdenv.mkDerivation {
     runHook preConfigure
     gn gen out --args='is_debug=false is_component_build=false extra_cflags_cc=["-fexceptions"]'
   '';
+
+  dontUseNinjaBuild = true;
+  dontUseNinjaInstall = true;
 
   buildPhase = ''
     ninja -C out skottie_tool

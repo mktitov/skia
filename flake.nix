@@ -7,7 +7,7 @@
 
     # Build deps
     icu = {
-      url = "git+https://chromium.googlesource.com/chromium/deps/icu.git?rev=dbd3825b31041d782c5b504c59dcfb5ac7dda08c";
+      url = "git+https://chromium.googlesource.com/chromium/deps/icu.git?rev=a0718d4f121727e30b8d52c7a189ebf5ab52421f";
       flake = false;
     };
     zlib = {
@@ -53,7 +53,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         skottie_tool = import ./build.nix {

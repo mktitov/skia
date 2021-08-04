@@ -1,12 +1,15 @@
 { pkgs, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
 
-with pkgs; stdenv.mkDerivation {
+with pkgs;
+with lib;
+stdenv.mkDerivation {
   name = "skottie_tool";
   src = builtins.path { path = ./.; };
 
   nativeBuildInputs = [ python2 gn ninja ];
 
-  buildInputs = [ fontconfig libglvnd mesa xorg.libX11 ];
+  buildInputs = [ fontconfig libglvnd mesa xorg.libX11 ]
+    ++ optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [ AppKit ApplicationServices OpenGL ]);
 
   preConfigure = ''
     mkdir -p third_party/externals
@@ -37,7 +40,7 @@ with pkgs; stdenv.mkDerivation {
   '';
 
   installPhase = ''
-    mkdir -p $bin
-    mv out/skottie_tool $bin/
+    mkdir -p $out/bin
+    mv out/skottie_tool $out/bin/
   '';
 }

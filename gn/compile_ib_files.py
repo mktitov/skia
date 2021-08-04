@@ -26,7 +26,7 @@ def main():
     os.environ['DEVELOPER_DIR'] = args.developer_dir
 
   ibtool_args = [
-      'xcrun', 'ibtool',
+      '/usr/bin/xcrun', 'ibtool',
       '--errors', '--warnings', '--notices',
       '--output-format', 'human-readable-text'
   ]

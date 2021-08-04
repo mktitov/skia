@@ -1,12 +1,15 @@
 { pkgs, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp, skottie_tool }:
 
-with pkgs; mkShell {
+with pkgs;
+with lib;
+mkShell {
   name = "skia-env";
 
   nativeBuildInputs = [ python2 gn ninja ];
 
   # buildInputs = [ skottie_tool ];
-  buildInputs = [ fontconfig libglvnd mesa xorg.libX11 ];
+  buildInputs = [ fontconfig libglvnd mesa xorg.libX11 ]
+    ++ optionals stdenv.isDarwin (with darwin.apple_sdk.frameworks; [ AppKit ApplicationServices OpenGL ]);
 
   shellHook = ''
     rm -rf third_party/externals

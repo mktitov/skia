@@ -10,6 +10,7 @@
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLConstructor.h"
+#include "src/sksl/ir/SkSLConstructorArrayCast.h"
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
@@ -407,17 +408,16 @@ CoercionCost Type::coercionCost(const Type& other) const {
     if (*this == other) {
         return CoercionCost::Free();
     }
-    if (this->isVector() && other.isVector()) {
-        if (this->columns() == other.columns()) {
-            return this->componentType().coercionCost(other.componentType());
+    if (this->typeKind() == other.typeKind() &&
+        (this->isVector() || this->isMatrix() || this->isArray())) {
+        // Vectors/matrices/arrays of the same size can be coerced if their component type can be.
+        if (this->isMatrix() && (this->rows() != other.rows())) {
+            return CoercionCost::Impossible();
         }
-        return CoercionCost::Impossible();
-    }
-    if (this->isMatrix()) {
-        if (this->columns() == other.columns() && this->rows() == other.rows()) {
-            return this->componentType().coercionCost(other.componentType());
+        if (this->columns() != other.columns()) {
+            return CoercionCost::Impossible();
         }
-        return CoercionCost::Impossible();
+        return this->componentType().coercionCost(other.componentType());
     }
     if (this->isNumber() && other.isNumber()) {
         if (this->isLiteral() && this->isInteger()) {
@@ -439,6 +439,72 @@ CoercionCost Type::coercionCost(const Type& other) const {
         }
     }
     return CoercionCost::Impossible();
+}
+
+const Type* Type::applyPrecisionQualifiers(const Context& context,
+                                           const Modifiers& modifiers,
+                                           SymbolTable* symbols,
+                                           int offset) const {
+    // SkSL doesn't support low precision, so `lowp` is interpreted as medium precision.
+    bool highp   = modifiers.fFlags & Modifiers::kHighp_Flag;
+    bool mediump = modifiers.fFlags & Modifiers::kMediump_Flag;
+    bool lowp    = modifiers.fFlags & Modifiers::kLowp_Flag;
+
+    if (!lowp && !mediump && !highp) {
+        // No precision qualifiers here. Return the type as-is.
+        return this;
+    }
+
+    if (!ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
+        // We want to discourage precision modifiers internally. Instead, use the type that
+        // corresponds to the precision you need. (e.g. half vs float, short vs int)
+        context.fErrors.error(offset, "precision qualifiers are not allowed");
+        return nullptr;
+    }
+
+    if ((int(lowp) + int(mediump) + int(highp)) != 1) {
+        context.fErrors.error(offset, "only one precision qualifier can be used");
+        return nullptr;
+    }
+
+    const Type& component = this->componentType();
+    if (component.highPrecision()) {
+        if (highp) {
+            // Type is already high precision, and we are requesting high precision. Return as-is.
+            return this;
+        }
+
+        // Ascertain the mediump equivalent type for this type, if any.
+        const Type* mediumpType;
+        switch (component.numberKind()) {
+            case Type::NumberKind::kFloat:
+                mediumpType = context.fTypes.fHalf.get();
+                break;
+
+            case Type::NumberKind::kSigned:
+                mediumpType = context.fTypes.fShort.get();
+                break;
+
+            case Type::NumberKind::kUnsigned:
+                mediumpType = context.fTypes.fUShort.get();
+                break;
+
+            default:
+                mediumpType = nullptr;
+                break;
+        }
+
+        if (mediumpType) {
+            // Convert the mediump component type into the final vector/matrix/array type as needed.
+            return this->isArray()
+                           ? symbols->addArrayDimension(mediumpType, this->columns())
+                           : &mediumpType->toCompound(context, this->columns(), this->rows());
+        }
+    }
+
+    context.fErrors.error(offset, "type '" + this->displayName() +
+                                  "' does not support precision qualifiers");
+    return nullptr;
 }
 
 const Type& Type::toCompound(const Context& context, int columns, int rows) const {
@@ -636,6 +702,9 @@ std::unique_ptr<Expression> Type::coerceExpression(std::unique_ptr<Expression> e
     }
     if (this->isVector() || this->isMatrix()) {
         return ConstructorCompoundCast::Make(context, offset, *this, std::move(expr));
+    }
+    if (this->isArray()) {
+        return ConstructorArrayCast::Make(context, offset, *this, std::move(expr));
     }
     context.fErrors.error(offset, "cannot construct '" + this->displayName() + "'");
     return nullptr;

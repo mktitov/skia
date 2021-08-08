@@ -2,7 +2,7 @@
   description = "Skia flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-21.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/staging-21.05";
     flake-utils.url = "github:numtide/flake-utils";
 
     # Build deps
@@ -39,7 +39,7 @@
       flake = false;
     };
     harfbuzz = {
-      url = "github:harfbuzz/harfbuzz/3a74ee528255cc027d84b204a87b5c25e47bff79";
+      url = "github:harfbuzz/harfbuzz/368e9578873798e2d17ed78a0474dec7d4e9d6c0";
       flake = false;
     };
     libpng = {

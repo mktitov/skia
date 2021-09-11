@@ -1644,6 +1644,12 @@ STAGE(move_dst_src, Ctx::None) {
     b = db;
     a = da;
 }
+STAGE(swap_src_dst, Ctx::None) {
+    std::swap(r, dr);
+    std::swap(g, dg);
+    std::swap(b, db);
+    std::swap(a, da);
+}
 
 STAGE(premul, Ctx::None) {
     r = r * a;
@@ -2766,11 +2772,11 @@ STAGE(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
     // We'll accumulate the color of all four samples into {r,g,b,a} directly.
     r = g = b = a = 0;
 
-    for (float dy = -0.5f; dy <= +0.5f; dy += 1.0f)
-    for (float dx = -0.5f; dx <= +0.5f; dx += 1.0f) {
+    for (float py = -0.5f; py <= +0.5f; py += 1.0f)
+    for (float px = -0.5f; px <= +0.5f; px += 1.0f) {
         // (x,y) are the coordinates of this sample point.
-        F x = cx + dx,
-          y = cy + dy;
+        F x = cx + px,
+          y = cy + py;
 
         // ix_and_ptr() will clamp to the image's bounds for us.
         const uint32_t* ptr;
@@ -2783,8 +2789,8 @@ STAGE(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
         // are combined in direct proportion to their area overlapping that logical query pixel.
         // At positive offsets, the x-axis contribution to that rectangle is fx,
         // or (1-fx) at negative x.  Same deal for y.
-        F sx = (dx > 0) ? fx : 1.0f - fx,
-          sy = (dy > 0) ? fy : 1.0f - fy,
+        F sx = (px > 0) ? fx : 1.0f - fx,
+          sy = (py > 0) ? fy : 1.0f - fy,
           area = sx * sy;
 
         r += sr * area;
@@ -3286,6 +3292,13 @@ STAGE_PP(move_dst_src, Ctx::None) {
     g = dg;
     b = db;
     a = da;
+}
+
+STAGE_PP(swap_src_dst, Ctx::None) {
+    std::swap(r, dr);
+    std::swap(g, dg);
+    std::swap(b, db);
+    std::swap(a, da);
 }
 
 // ~~~~~~ Blend modes ~~~~~~ //

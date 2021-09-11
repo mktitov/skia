@@ -12,6 +12,7 @@
 #include "include/gpu/GrContextThreadSafeProxy.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkTaskGroup.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrBackendUtils.h"
 #include "src/gpu/GrClientMappedBufferManager.h"
 #include "src/gpu/GrContextThreadSafeProxyPriv.h"
@@ -20,14 +21,23 @@
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrShaderUtils.h"
-#include "src/gpu/GrSurfaceContext.h"
+#include "src/gpu/SurfaceContext.h"
 #include "src/gpu/effects/GrSkSLFP.h"
 #include "src/gpu/gl/GrGLGpu.h"
 #include "src/gpu/mock/GrMockGpu.h"
-#include "src/gpu/ops/GrSmallPathAtlasMgr.h"
 #include "src/gpu/text/GrAtlasManager.h"
 #include "src/gpu/text/GrStrikeCache.h"
 #include "src/image/SkImage_GpuBase.h"
+#if SK_GPU_V1
+#include "src/gpu/ops/GrSmallPathAtlasMgr.h"
+#else
+// A vestigial definition for v2 that will never be instantiated
+class GrSmallPathAtlasMgr {
+public:
+    GrSmallPathAtlasMgr() { SkASSERT(0); }
+    void reset() { SkASSERT(0); }
+};
+#endif
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlBackendContext.h"
 #include "src/gpu/mtl/GrMtlTrampoline.h"
@@ -365,6 +375,7 @@ bool GrDirectContext::wait(int numSemaphores, const GrBackendSemaphore waitSemap
 }
 
 GrSmallPathAtlasMgr* GrDirectContext::onGetSmallPathAtlasMgr() {
+#if SK_GPU_V1
     if (!fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr = std::make_unique<GrSmallPathAtlasMgr>();
 
@@ -374,6 +385,7 @@ GrSmallPathAtlasMgr* GrDirectContext::onGetSmallPathAtlasMgr() {
     if (!fSmallPathAtlasMgr->initAtlas(this->proxyProvider(), this->caps())) {
         return nullptr;
     }
+#endif
 
     return fSmallPathAtlasMgr.get();
 }
@@ -523,7 +535,7 @@ static bool update_texture_with_pixmaps(GrDirectContext* context,
 
     GrSwizzle swizzle = context->priv().caps()->getReadSwizzle(format, ct);
     GrSurfaceProxyView view(std::move(proxy), textureOrigin, swizzle);
-    GrSurfaceContext surfaceContext(context, std::move(view), src[0].info().colorInfo());
+    skgpu::SurfaceContext surfaceContext(context, std::move(view), src[0].info().colorInfo());
     SkAutoSTArray<15, GrCPixmap> tmpSrc(numLevels);
     for (int i = 0; i < numLevels; ++i) {
         tmpSrc[i] = src[i];
@@ -671,7 +683,7 @@ bool GrDirectContext::updateBackendTexture(const GrBackendTexture& backendTextur
     }
 
     GrBackendFormat format = backendTexture.getBackendFormat();
-    GrColorType grColorType = SkColorTypeAndFormatToGrColorType(this->caps(), skColorType, format);
+    GrColorType grColorType = SkColorTypeToGrColorType(skColorType);
 
     if (!this->caps()->areColorTypeAndFormatCompatible(grColorType, format)) {
         return false;

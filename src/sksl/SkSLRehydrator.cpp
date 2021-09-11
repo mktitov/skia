@@ -107,12 +107,8 @@ Layout Rehydrator::layout() {
             int set = this->readS8();
             int builtin = this->readS16();
             int inputAttachmentIndex = this->readS8();
-            int primitive = this->readS8();
-            int maxVertices = this->readS8();
-            int invocations = this->readS8();
-            return Layout(flags, location, offset, binding, index, set, builtin,
-                          inputAttachmentIndex, (Layout::Primitive)primitive, maxVertices,
-                          invocations);
+            return Layout(
+                    flags, location, offset, binding, index, set, builtin, inputAttachmentIndex);
         }
         default:
             SkASSERT(false);
@@ -147,15 +143,10 @@ const Symbol* Rehydrator::symbol() {
             uint16_t id = this->readU16();
             const Type* componentType = this->type();
             int8_t count = this->readS8();
-            String name(componentType->name());
-            if (count == Type::kUnsizedArray) {
-                name += "[]";
-            } else {
-                name += "[" + to_string(count) + "]";
-            }
-            skstd::string_view nameChars(*fSymbolTable->takeOwnershipOfString(std::move(name)));
+            const String* arrayName =
+                    fSymbolTable->takeOwnershipOfString(componentType->getArrayName(count));
             const Type* result = fSymbolTable->takeOwnershipOfSymbol(
-                    Type::MakeArrayType(nameChars, *componentType, count));
+                    Type::MakeArrayType(*arrayName, *componentType, count));
             this->addSymbol(id, result);
             return result;
         }
@@ -284,15 +275,8 @@ std::unique_ptr<ProgramElement> Rehydrator::element() {
             const FunctionDeclaration* decl = this->symbolRef<FunctionDeclaration>(
                                                                 Symbol::Kind::kFunctionDeclaration);
             std::unique_ptr<Statement> body = this->statement();
-            std::unordered_set<const FunctionDeclaration*> refs;
-            uint8_t refCount = this->readU8();
-            for (int i = 0; i < refCount; ++i) {
-                refs.insert(this->symbolRef<FunctionDeclaration>(
-                                                               Symbol::Kind::kFunctionDeclaration));
-            }
-            auto result = std::make_unique<FunctionDefinition>(/*offset=*/-1, decl,
-                                                               /*builtin=*/true, std::move(body),
-                                                               std::move(refs));
+            auto result = FunctionDefinition::Convert(fContext, /*offset=*/-1, *decl,
+                                                      std::move(body), /*builtin=*/true);
             decl->setDefinition(result.get());
             return std::move(result);
         }
@@ -359,7 +343,7 @@ std::unique_ptr<Statement> Rehydrator::statement() {
             std::shared_ptr<SymbolTable> symbols = this->symbolTable();
             return ForStatement::Make(fContext, /*offset=*/-1, std::move(initializer),
                                       std::move(test), std::move(next), std::move(body),
-                                      std::move(symbols));
+                                      /*unrollInfo=*/nullptr, std::move(symbols));
         }
         case Rehydrator::kIf_Command: {
             bool isStatic = this->readU8();
@@ -561,7 +545,7 @@ std::shared_ptr<SymbolTable> Rehydrator::symbolTable(bool inherit) {
     std::shared_ptr<SymbolTable> oldTable = fSymbolTable;
     std::shared_ptr<SymbolTable> result =
             inherit ? std::make_shared<SymbolTable>(fSymbolTable, /*builtin=*/true)
-                    : std::make_shared<SymbolTable>(this->errorReporter(), /*builtin=*/true);
+                    : std::make_shared<SymbolTable>(fContext, /*builtin=*/true);
     fSymbolTable = result;
     std::vector<const Symbol*> ownedSymbols;
     ownedSymbols.reserve(ownedCount);

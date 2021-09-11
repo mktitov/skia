@@ -78,7 +78,7 @@ namespace {
 
             skvm::PixelFormat fmt = skvm::SkColorType_to_PixelFormat(ct);
 
-            skvm::Color c = p->load(fmt, p->arg(SkColorTypeBytesPerPixel(ct)));
+            skvm::Color c = p->load(fmt, p->varying(SkColorTypeBytesPerPixel(ct)));
 
             return SkColorSpaceXformSteps{fSprite, dst}.program(p, uniforms, c);
         }
@@ -114,7 +114,8 @@ namespace {
                 case    kGray_8_SkColorType:
                 case  kRGB_888x_SkColorType:
                 case kRGBA_8888_SkColorType:
-                case kBGRA_8888_SkColorType:    rate =  1/255.0f; break;
+                case kBGRA_8888_SkColorType:
+                case kSRGBA_8888_SkColorType:   rate =  1/255.0f; break;
                 case kRGB_101010x_SkColorType:
                 case kRGBA_1010102_SkColorType:
                 case kBGR_101010x_SkColorType:
@@ -289,7 +290,7 @@ SkVMBlitter::Params SkVMBlitter::EffectiveParams(const SkPixmap& device,
 
 skvm::Color SkVMBlitter::DstColor(skvm::Builder* p, const Params& params) {
     skvm::PixelFormat dstFormat = skvm::SkColorType_to_PixelFormat(params.dst.colorType());
-    skvm::Ptr dst_ptr = p->arg(SkColorTypeBytesPerPixel(params.dst.colorType()));
+    skvm::Ptr dst_ptr = p->varying(SkColorTypeBytesPerPixel(params.dst.colorType()));
     return p->load(dstFormat, dst_ptr);
 }
 
@@ -297,7 +298,7 @@ void SkVMBlitter::BuildProgram(skvm::Builder* p, const Params& params,
                                skvm::Uniforms* uniforms, SkArenaAlloc* alloc) {
     // First two arguments are always uniforms and the destination buffer.
     uniforms->base    = p->uniform();
-    skvm::Ptr dst_ptr = p->arg(SkColorTypeBytesPerPixel(params.dst.colorType()));
+    skvm::Ptr dst_ptr = p->varying(SkColorTypeBytesPerPixel(params.dst.colorType()));
     // A SpriteShader (in this file) may next use one argument as its varying source.
     // Subsequent arguments depend on params.coverage:
     //    - Full:      (no more arguments)
@@ -556,7 +557,7 @@ SkVMBlitter::SkVMBlitter(const SkPixmap& device,
                          bool* ok)
         : fDevice(device), fSprite(sprite ? *sprite : SkPixmap{})
         , fSpriteOffset(spriteOffset)
-        , fUniforms(skvm::Ptr{0}, kBlitterUniformsCount)
+        , fUniforms(skvm::UPtr{{0}}, kBlitterUniformsCount)
         , fParams(EffectiveParams(device, sprite, paint, matrices, std::move(clip)))
         , fKey(CacheKey(fParams, &fUniforms, &fAlloc, ok)) {}
 

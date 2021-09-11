@@ -57,17 +57,6 @@ void SkClipStackDevice::onReplaceClip(const SkIRect& rect) {
     fClipStack.replaceClip(deviceRect, /*doAA=*/false);
 }
 
-void SkClipStackDevice::onSetDeviceClipRestriction(SkIRect* clipRestriction) {
-    if (clipRestriction->isEmpty()) {
-        fClipStack.setDeviceClipRestriction(*clipRestriction);
-    } else {
-        SkIPoint origin = this->getOrigin();
-        SkIRect rect = clipRestriction->makeOffset(-origin);
-        fClipStack.setDeviceClipRestriction(rect);
-        fClipStack.clipDevRect(rect, SkClipOp::kIntersect);
-    }
-}
-
 bool SkClipStackDevice::onClipIsAA() const {
     SkClipStack::B2TIter        iter(fClipStack);
     const SkClipStack::Element* element;
@@ -102,7 +91,15 @@ void SkClipStackDevice::onAsRgnClip(SkRegion* rgn) const {
             elem->asDeviceSpacePath(&tmpPath);
             SkRegion tmpRgn;
             tmpRgn.setPath(tmpPath, boundsRgn);
-            rgn->op(tmpRgn, elem->getRegionOp());
+            if (elem->isReplaceOp()) {
+                // All replace elements are rectangles
+                // TODO: SkClipStack can be simplified to be I,D,R ops now, which means element
+                // iteration can be from top of the stack to the most recent replace element.
+                // When that's done, this loop will be simplifiable.
+                rgn->setRect(elem->getDeviceSpaceRect().round());
+            } else {
+                rgn->op(tmpRgn, static_cast<SkRegion::Op>(elem->getOp()));
+            }
         }
     }
 }

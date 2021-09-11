@@ -31,8 +31,6 @@
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
 #include "src/gpu/GrShaderUtils.h"
-#include "src/gpu/ops/GrAtlasPathRenderer.h"
-#include "src/gpu/tessellate/GrTessellationPathRenderer.h"
 #include "src/image/SkImage_Base.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/utils/SkJSONWriter.h"
@@ -53,6 +51,11 @@
 #include "tools/viewer/SkSLSlide.h"
 #include "tools/viewer/SlideDir.h"
 #include "tools/viewer/SvgSlide.h"
+
+#if SK_GPU_V1
+#include "src/gpu/ops/AtlasPathRenderer.h"
+#include "src/gpu/ops/TessellationPathRenderer.h"
+#endif
 
 #include <cstdlib>
 #include <map>
@@ -761,7 +764,7 @@ void Viewer::initSlides() {
                     return sk_make_sp<SkRiveSlide>(name, path);}
             },
     #endif
-#if defined(SK_XML)
+#if defined(SK_ENABLE_SVG)
         { ".svg", "svg-dir", FLAGS_svgs,
             [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
                 return sk_make_sp<SvgSlide>(name, path);}
@@ -1852,7 +1855,8 @@ void Viewer::drawImGui() {
         // always visible, we can end up in a layout feedback loop.
         ImGui::SetNextWindowSize(ImVec2(400, 400), ImGuiCond_FirstUseEver);
         DisplayParams params = fWindow->getRequestedDisplayParams();
-        bool paramsChanged = false;
+        bool displayParamsChanged = false; // heavy-weight, might recreate entire context
+        bool uiParamsChanged = false;      // light weight, just triggers window invalidation
         auto ctx = fWindow->directContext();
 
         if (ImGui::Begin("Tools", &fShowImGuiDebugWindow,
@@ -1890,12 +1894,12 @@ void Viewer::drawImGui() {
 
                 bool* wire = &params.fGrContextOptions.fWireframeMode;
                 if (ctx && ImGui::Checkbox("Wireframe Mode", wire)) {
-                    paramsChanged = true;
+                    displayParamsChanged = true;
                 }
 
                 bool* reducedShaders = &params.fGrContextOptions.fReducedShaderVariations;
                 if (ctx && ImGui::Checkbox("Reduced shaders", reducedShaders)) {
-                    paramsChanged = true;
+                    displayParamsChanged = true;
                 }
 
                 if (ctx) {
@@ -1923,7 +1927,7 @@ void Viewer::drawImGui() {
 
                     if (sampleCount != params.fMSAASampleCount) {
                         params.fMSAASampleCount = sampleCount;
-                        paramsChanged = true;
+                        displayParamsChanged = true;
                     }
                 }
 
@@ -1944,7 +1948,7 @@ void Viewer::drawImGui() {
                         SkPixelGeometry pixelGeometry = SkTo<SkPixelGeometry>(pixelGeometryIdx - 1);
                         params.fSurfaceProps = SkSurfaceProps(flags, pixelGeometry);
                     }
-                    paramsChanged = true;
+                    displayParamsChanged = true;
                 }
 
                 bool useDFT = params.fSurfaceProps.isUseDeviceIndependentFonts();
@@ -1957,7 +1961,7 @@ void Viewer::drawImGui() {
                     }
                     SkPixelGeometry pixelGeometry = params.fSurfaceProps.pixelGeometry();
                     params.fSurfaceProps = SkSurfaceProps(flags, pixelGeometry);
-                    paramsChanged = true;
+                    displayParamsChanged = true;
                 }
 
                 if (ImGui::TreeNode("Path Renderers")) {
@@ -1966,7 +1970,7 @@ void Viewer::drawImGui() {
                         if (ImGui::RadioButton(gPathRendererNames[x].c_str(), prevPr == x)) {
                             if (x != params.fGrContextOptions.fGpuPathRenderers) {
                                 params.fGrContextOptions.fGpuPathRenderers = x;
-                                paramsChanged = true;
+                                displayParamsChanged = true;
                             }
                         }
                     };
@@ -1974,16 +1978,18 @@ void Viewer::drawImGui() {
                     if (!ctx) {
                         ImGui::RadioButton("Software", true);
                     } else {
-                        const auto* caps = ctx->priv().caps();
                         prButton(GpuPathRenderers::kDefault);
+#if SK_GPU_V1
                         if (fWindow->sampleCount() > 1 || FLAGS_dmsaa) {
-                            if (GrAtlasPathRenderer::IsSupported(ctx)) {
+                            const auto* caps = ctx->priv().caps();
+                            if (skgpu::v1::AtlasPathRenderer::IsSupported(ctx)) {
                                 prButton(GpuPathRenderers::kAtlas);
                             }
-                            if (GrTessellationPathRenderer::IsSupported(*caps)) {
+                            if (skgpu::v1::TessellationPathRenderer::IsSupported(*caps)) {
                                 prButton(GpuPathRenderers::kTessellation);
                             }
                         }
+#endif
                         if (1 == fWindow->sampleCount()) {
                             prButton(GpuPathRenderers::kSmall);
                         }
@@ -2005,40 +2011,42 @@ void Viewer::drawImGui() {
                 if (ImGui::Checkbox("Apply Backing Scale", &fApplyBackingScale)) {
                     this->preTouchMatrixChanged();
                     this->onResize(fWindow->width(), fWindow->height());
-                    paramsChanged = true;
+                    // This changes how we manipulate the canvas transform, it's not changing the
+                    // window's actual parameters.
+                    uiParamsChanged = true;
                 }
 
                 float zoom = fZoomLevel;
                 if (ImGui::SliderFloat("Zoom", &zoom, MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL)) {
                     fZoomLevel = zoom;
                     this->preTouchMatrixChanged();
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
                 float deg = fRotation;
                 if (ImGui::SliderFloat("Rotate", &deg, -30, 360, "%.3f deg")) {
                     fRotation = deg;
                     this->preTouchMatrixChanged();
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
                 if (ImGui::CollapsingHeader("Subpixel offset", ImGuiTreeNodeFlags_NoTreePushOnOpen)) {
                     if (ImGui_DragLocation(&fOffset)) {
                         this->preTouchMatrixChanged();
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 } else if (fOffset != SkVector{0.5f, 0.5f}) {
                     this->preTouchMatrixChanged();
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                     fOffset = {0.5f, 0.5f};
                 }
                 int perspectiveMode = static_cast<int>(fPerspectiveMode);
                 if (ImGui::Combo("Perspective", &perspectiveMode, "Off\0Real\0Fake\0\0")) {
                     fPerspectiveMode = static_cast<PerspectiveMode>(perspectiveMode);
                     this->preTouchMatrixChanged();
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
                 if (perspectiveMode != kPerspective_Off && ImGui_DragQuad(fPerspectivePoints)) {
                     this->preTouchMatrixChanged();
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
             }
 
@@ -2073,13 +2081,13 @@ void Viewer::drawImGui() {
                                 break;
                         }
                     }
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
 
-                auto paintFlag = [this, &paramsChanged](const char* label, const char* items,
-                                                        bool SkPaintFields::* flag,
-                                                        bool (SkPaint::* isFlag)() const,
-                                                        void (SkPaint::* setFlag)(bool) )
+                auto paintFlag = [this, &uiParamsChanged](const char* label, const char* items,
+                                                          bool SkPaintFields::* flag,
+                                                          bool (SkPaint::* isFlag)() const,
+                                                          void (SkPaint::* setFlag)(bool) )
                 {
                     int itemIndex = 0;
                     if (fPaintOverrides.*flag) {
@@ -2092,7 +2100,7 @@ void Viewer::drawImGui() {
                             fPaintOverrides.*flag = true;
                             (fPaint.*setFlag)(itemIndex == 2);
                         }
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 };
 
@@ -2115,7 +2123,7 @@ void Viewer::drawImGui() {
                         fPaint.setStyle(SkTo<SkPaint::Style>(styleIdx - 1));
                         fPaintOverrides.fStyle = true;
                     }
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
 
                 ImGui::Checkbox("Force Runtime Blends", &fPaintOverrides.fForceRuntimeBlend);
@@ -2125,7 +2133,7 @@ void Viewer::drawImGui() {
                     float width = fPaint.getStrokeWidth();
                     if (ImGui::SliderFloat("Stroke Width", &width, 0, 20)) {
                         fPaint.setStrokeWidth(width);
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 }
 
@@ -2134,7 +2142,7 @@ void Viewer::drawImGui() {
                     float miterLimit = fPaint.getStrokeMiter();
                     if (ImGui::SliderFloat("Miter Limit", &miterLimit, 0, 20)) {
                         fPaint.setStrokeMiter(miterLimit);
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 }
 
@@ -2152,7 +2160,7 @@ void Viewer::drawImGui() {
                         fPaint.setStrokeCap(SkTo<SkPaint::Cap>(capIdx - 1));
                         fPaintOverrides.fCapType = true;
                     }
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
 
                 int joinIdx = 0;
@@ -2169,7 +2177,7 @@ void Viewer::drawImGui() {
                         fPaint.setStrokeJoin(SkTo<SkPaint::Join>(joinIdx - 1));
                         fPaintOverrides.fJoinType = true;
                     }
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
             }
 
@@ -2188,13 +2196,13 @@ void Viewer::drawImGui() {
                         fFont.setHinting(SkTo<SkFontHinting>(hintingIdx - 1));
                         fFontOverrides.fHinting = true;
                     }
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
 
-                auto fontFlag = [this, &paramsChanged](const char* label, const char* items,
-                                                       bool SkFontFields::* flag,
-                                                       bool (SkFont::* isFlag)() const,
-                                                       void (SkFont::* setFlag)(bool) )
+                auto fontFlag = [this, &uiParamsChanged](const char* label, const char* items,
+                                                        bool SkFontFields::* flag,
+                                                        bool (SkFont::* isFlag)() const,
+                                                        void (SkFont::* setFlag)(bool) )
                 {
                     int itemIndex = 0;
                     if (fFontOverrides.*flag) {
@@ -2207,7 +2215,7 @@ void Viewer::drawImGui() {
                             fFontOverrides.*flag = true;
                             (fFont.*setFlag)(itemIndex == 2);
                         }
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 };
 
@@ -2255,7 +2263,7 @@ void Viewer::drawImGui() {
                         fFont.setEdging(SkTo<SkFont::Edging>(edgingIdx-1));
                         fFontOverrides.fEdging = true;
                     }
-                    paramsChanged = true;
+                    uiParamsChanged = true;
                 }
 
                 ImGui::Checkbox("Override Size", &fFontOverrides.fSize);
@@ -2269,7 +2277,7 @@ void Viewer::drawImGui() {
                                          "%.6f", 2.0f))
                     {
                         fFont.setSize(textSize);
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 }
 
@@ -2278,7 +2286,7 @@ void Viewer::drawImGui() {
                     float scaleX = fFont.getScaleX();
                     if (ImGui::SliderFloat("ScaleX", &scaleX, MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL)) {
                         fFont.setScaleX(scaleX);
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 }
 
@@ -2287,7 +2295,7 @@ void Viewer::drawImGui() {
                     float skewX = fFont.getSkewX();
                     if (ImGui::SliderFloat("SkewX", &skewX, MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL)) {
                         fFont.setSkewX(skewX);
-                        paramsChanged = true;
+                        uiParamsChanged = true;
                     }
                 }
             }
@@ -2502,7 +2510,7 @@ void Viewer::drawImGui() {
                     params.fGrContextOptions.fShaderCacheStrategy =
                             sksl ? GrContextOptions::ShaderCacheStrategy::kSkSL
                                  : GrContextOptions::ShaderCacheStrategy::kBackendSource;
-                    paramsChanged = true;
+                    displayParamsChanged = true;
                     doView = true;
 
                     fDeferredActions.push_back([=]() {
@@ -2592,9 +2600,11 @@ void Viewer::drawImGui() {
                 }
             }
         }
-        if (paramsChanged) {
+        if (displayParamsChanged || uiParamsChanged) {
             fDeferredActions.push_back([=]() {
-                fWindow->setRequestedDisplayParams(params);
+                if (displayParamsChanged) {
+                    fWindow->setRequestedDisplayParams(params);
+                }
                 fWindow->inval();
                 this->updateTitle();
             });
@@ -2809,18 +2819,20 @@ void Viewer::updateUIState() {
             if (!ctx) {
                 writer.appendString("Software");
             } else {
-                const auto* caps = ctx->priv().caps();
                 writer.appendString(gPathRendererNames[GpuPathRenderers::kDefault].c_str());
+#if SK_GPU_V1
                 if (fWindow->sampleCount() > 1 || FLAGS_dmsaa) {
-                    if (GrAtlasPathRenderer::IsSupported(ctx)) {
+                    const auto* caps = ctx->priv().caps();
+                    if (skgpu::v1::AtlasPathRenderer::IsSupported(ctx)) {
                         writer.appendString(
                                 gPathRendererNames[GpuPathRenderers::kAtlas].c_str());
                     }
-                    if (GrTessellationPathRenderer::IsSupported(*caps)) {
+                    if (skgpu::v1::TessellationPathRenderer::IsSupported(*caps)) {
                         writer.appendString(
                                 gPathRendererNames[GpuPathRenderers::kTessellation].c_str());
                     }
                 }
+#endif
                 if (1 == fWindow->sampleCount()) {
                     writer.appendString(gPathRendererNames[GpuPathRenderers::kSmall].c_str());
                 }

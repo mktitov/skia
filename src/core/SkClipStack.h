@@ -137,10 +137,6 @@ public:
         // Augments getOps()'s behavior by requiring a clip reset before the op is applied.
         bool isReplaceOp() const { return fIsReplace; }
 
-        SkRegion::Op getRegionOp() const {
-            return this->isReplaceOp() ? SkRegion::kReplace_Op : (SkRegion::Op) fOp;
-        }
-
         //!< Call to get the element as a path, regardless of its type.
         void asDeviceSpacePath(SkPath* path) const;
 
@@ -156,18 +152,6 @@ public:
 
         //!< Inverts the fill of the clip shape. Note that a kEmpty element remains kEmpty.
         void invertShapeFillType();
-
-        //!< Sets the set operation represented by the element.
-        void setOp(SkClipOp op) {
-            fOp = op;
-            fIsReplace = false;
-        }
-        // TODO: This is only used by GrReducedClip, which will be deletable soon, so then this
-        // can also be cleaned up.
-        void setReplaceOp() {
-            fOp = SkClipOp::kIntersect;
-            fIsReplace = true;
-        }
 
         /** The GenID can be used by clip stack clients to cache representations of the clip. The
             ID corresponds to the set of clip elements up to and including this element within the
@@ -390,9 +374,6 @@ public:
     void clipShader(sk_sp<SkShader>);
     // An optimized version of clipDevRect(emptyRect, kIntersect, ...)
     void clipEmpty();
-    void setDeviceClipRestriction(const SkIRect& rect) {
-        fClipRestrictionRect = SkRect::Make(rect);
-    }
 
     void replaceClip(const SkRect& devRect, bool doAA);
 
@@ -531,8 +512,6 @@ private:
 
     SkDeque fDeque;
     int     fSaveCount;
-
-    SkRect fClipRestrictionRect = SkRect::MakeEmpty();
 
     bool internalQuickContains(const SkRect& devRect) const;
     bool internalQuickContains(const SkRRect& devRRect) const;

@@ -160,6 +160,8 @@ public:
     std::unique_ptr<GrFragmentProcessor> clone() const override;
 
 private:
+    class Impl;
+
     GrSkSLFP(sk_sp<SkRuntimeEffect> effect, const char* name, OptFlags optFlags);
     GrSkSLFP(const GrSkSLFP& other);
 
@@ -167,9 +169,9 @@ private:
     void setInput(std::unique_ptr<GrFragmentProcessor> input);
     void setDestColorFP(std::unique_ptr<GrFragmentProcessor> destColorFP);
 
-    std::unique_ptr<GrGLSLFragmentProcessor> onMakeProgramImpl() const override;
+    std::unique_ptr<ProgramImpl> onMakeProgramImpl() const override;
 
-    void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
+    void onAddToKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
@@ -372,8 +374,6 @@ private:
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     using INHERITED = GrFragmentProcessor;
-
-    friend class GrGLSLSkSLFP;
 
     friend class GrSkSLFPFactory;
 };

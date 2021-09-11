@@ -45,7 +45,9 @@
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLIntLiteral.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLMethodReference.h"
 #include "src/sksl/ir/SkSLNop.h"
+#include "src/sksl/ir/SkSLPoison.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
@@ -91,43 +93,10 @@ void IRGenerator::popSymbolTable() {
     fSymbolTable = fSymbolTable->fParent;
 }
 
-bool IRGenerator::detectVarDeclarationWithoutScope(const Statement& stmt) {
-    // Parsing an AST node containing a single variable declaration creates a lone VarDeclaration
-    // statement. An AST with multiple variable declarations creates an unscoped Block containing
-    // multiple VarDeclaration statements. We need to detect either case.
-    const Variable* var;
-    if (stmt.is<VarDeclaration>()) {
-        // The single-variable case. No blocks at all.
-        var = &stmt.as<VarDeclaration>().var();
-    } else if (stmt.is<Block>()) {
-        // The multiple-variable case: an unscoped, non-empty block...
-        const Block& block = stmt.as<Block>();
-        if (block.isScope() || block.children().empty()) {
-            return false;
-        }
-        // ... holding a variable declaration.
-        const Statement& innerStmt = *block.children().front();
-        if (!innerStmt.is<VarDeclaration>()) {
-            return false;
-        }
-        var = &innerStmt.as<VarDeclaration>().var();
-    } else {
-        // This statement wasn't a variable declaration. No problem.
-        return false;
-    }
-
-    // Report an error.
-    SkASSERT(var);
-    this->errorReporter().error(stmt.fOffset,
-                                "variable '" + var->name() + "' must be created in a scope");
-    return true;
-}
-
 std::unique_ptr<Extension> IRGenerator::convertExtension(int offset, skstd::string_view name) {
     if (this->programKind() != ProgramKind::kFragment &&
-        this->programKind() != ProgramKind::kVertex &&
-        this->programKind() != ProgramKind::kGeometry) {
-        this->errorReporter().error(offset, "extensions are not allowed here");
+        this->programKind() != ProgramKind::kVertex) {
+        this->errorReporter().error(offset, "extensions are not allowed in this kind of program");
         return nullptr;
     }
 
@@ -163,23 +132,7 @@ std::unique_ptr<Statement> IRGenerator::convertStatement(const ASTNode& statemen
             return nullptr;
         default:
             // it's an expression
-            std::unique_ptr<Statement> result = this->convertExpressionStatement(statement);
-            if (fRTAdjust && this->programKind() == ProgramKind::kGeometry) {
-                SkASSERT(result->is<ExpressionStatement>());
-                Expression& expr = *result->as<ExpressionStatement>().expression();
-                if (expr.is<FunctionCall>()) {
-                    FunctionCall& fc = expr.as<FunctionCall>();
-                    if (fc.function().isBuiltin() && fc.function().name() == "EmitVertex") {
-                        StatementArray statements;
-                        statements.reserve_back(2);
-                        statements.push_back(getNormalizeSkPositionCode());
-                        statements.push_back(std::move(result));
-                        return Block::Make(statement.fOffset, std::move(statements),
-                                           fSymbolTable, /*isScope=*/true);
-                    }
-                }
-            }
-            return result;
+            return this->convertExpressionStatement(statement);
     }
 }
 
@@ -189,10 +142,9 @@ std::unique_ptr<Block> IRGenerator::convertBlock(const ASTNode& block) {
     StatementArray statements;
     for (const auto& child : block) {
         std::unique_ptr<Statement> statement = this->convertStatement(child);
-        if (!statement) {
-            return nullptr;
+        if (statement) {
+            statements.push_back(std::move(statement));
         }
-        statements.push_back(std::move(statement));
     }
     return Block::Make(block.fOffset, std::move(statements), fSymbolTable);
 }
@@ -215,37 +167,7 @@ int IRGenerator::convertArraySize(const Type& type, int offset, const ASTNode& s
     if (!size) {
         return 0;
     }
-    return this->convertArraySize(type, std::move(size));
-}
-
-int IRGenerator::convertArraySize(const Type& type, std::unique_ptr<Expression> size) {
-    size = this->coerce(std::move(size), *fContext.fTypes.fInt);
-    if (!size) {
-        return 0;
-    }
-    if (type.isVoid()) {
-        this->errorReporter().error(size->fOffset, "type 'void' may not be used in an array");
-        return 0;
-    }
-    if (type.isOpaque()) {
-        this->errorReporter().error(
-                size->fOffset, "opaque type '" + type.name() + "' may not be used in an array");
-        return 0;
-    }
-    if (!size->is<IntLiteral>()) {
-        this->errorReporter().error(size->fOffset, "array size must be an integer");
-        return 0;
-    }
-    SKSL_INT count = size->as<IntLiteral>().value();
-    if (count <= 0) {
-        this->errorReporter().error(size->fOffset, "array size must be positive");
-        return 0;
-    }
-    if (!SkTFitsIn<int>(count)) {
-        this->errorReporter().error(size->fOffset, "array size is too large");
-        return 0;
-    }
-    return static_cast<int>(count);
+    return type.convertArraySize(fContext, std::move(size));
 }
 
 void IRGenerator::checkVarDeclaration(int offset, const Modifiers& modifiers, const Type* baseType,
@@ -319,7 +241,7 @@ std::unique_ptr<Variable> IRGenerator::convertVar(int offset, const Modifiers& m
     int arraySizeValue = 0;
     if (isArray) {
         SkASSERT(arraySize);
-        arraySizeValue = this->convertArraySize(*type, std::move(arraySize));
+        arraySizeValue = type->convertArraySize(fContext, std::move(arraySize));
         if (!arraySizeValue) {
             return {};
         }
@@ -410,10 +332,12 @@ StatementArray IRGenerator::convertVarDeclarations(const ASTNode& decls,
         std::unique_ptr<Expression> value;
         auto iter = varDecl.begin();
         if (iter != varDecl.end() && varData.fIsArray) {
-            if (*iter) {
-                arraySize = this->convertExpression(*iter++);
-            } else {
+            if (!*iter) {
                 this->errorReporter().error(decls.fOffset, "array must have a size");
+                continue;
+            }
+            arraySize = this->convertExpression(*iter++);
+            if (!arraySize) {
                 continue;
             }
         }
@@ -440,32 +364,14 @@ StatementArray IRGenerator::convertVarDeclarations(const ASTNode& decls,
 
 std::unique_ptr<ModifiersDeclaration> IRGenerator::convertModifiersDeclaration(const ASTNode& m) {
     if (this->programKind() != ProgramKind::kFragment &&
-        this->programKind() != ProgramKind::kVertex &&
-        this->programKind() != ProgramKind::kGeometry) {
-        this->errorReporter().error(m.fOffset, "layout qualifiers are not allowed here");
+        this->programKind() != ProgramKind::kVertex) {
+        this->errorReporter().error(m.fOffset,
+                "layout qualifiers are not allowed in this kind of program");
         return nullptr;
     }
 
     SkASSERT(m.fKind == ASTNode::Kind::kModifiers);
     Modifiers modifiers = m.getModifiers();
-    if (modifiers.fLayout.fInvocations != -1) {
-        if (this->programKind() != ProgramKind::kGeometry) {
-            this->errorReporter().error(m.fOffset,
-                                        "'invocations' is only legal in geometry shaders");
-            return nullptr;
-        }
-        fInvocations = modifiers.fLayout.fInvocations;
-        if (!this->caps().gsInvocationsSupport()) {
-            modifiers.fLayout.fInvocations = -1;
-            if (modifiers.fLayout.description() == "") {
-                return nullptr;
-            }
-        }
-    }
-    if (modifiers.fLayout.fMaxVertices != -1 && fInvocations > 0 &&
-        !this->caps().gsInvocationsSupport()) {
-        modifiers.fLayout.fMaxVertices *= fInvocations;
-    }
     return std::make_unique<ModifiersDeclaration>(this->modifiersPool().add(modifiers));
 }
 
@@ -480,16 +386,10 @@ std::unique_ptr<Statement> IRGenerator::convertIf(const ASTNode& n) {
     if (!ifTrue) {
         return nullptr;
     }
-    if (this->detectVarDeclarationWithoutScope(*ifTrue)) {
-        return nullptr;
-    }
     std::unique_ptr<Statement> ifFalse;
     if (iter != n.end()) {
         ifFalse = this->convertStatement(*(iter++));
         if (!ifFalse) {
-            return nullptr;
-        }
-        if (this->detectVarDeclarationWithoutScope(*ifFalse)) {
             return nullptr;
         }
     }
@@ -530,9 +430,6 @@ std::unique_ptr<Statement> IRGenerator::convertFor(const ASTNode& f) {
     if (!statement) {
         return nullptr;
     }
-    if (this->detectVarDeclarationWithoutScope(*statement)) {
-        return nullptr;
-    }
 
     return ForStatement::Convert(fContext, f.fOffset, std::move(initializer), std::move(test),
                                  std::move(next), std::move(statement), fSymbolTable);
@@ -549,9 +446,6 @@ std::unique_ptr<Statement> IRGenerator::convertWhile(const ASTNode& w) {
     if (!statement) {
         return nullptr;
     }
-    if (this->detectVarDeclarationWithoutScope(*statement)) {
-        return nullptr;
-    }
     return ForStatement::ConvertWhile(fContext, w.fOffset, std::move(test), std::move(statement),
                                       fSymbolTable);
 }
@@ -565,9 +459,6 @@ std::unique_ptr<Statement> IRGenerator::convertDo(const ASTNode& d) {
     }
     std::unique_ptr<Expression> test = this->convertExpression(*(iter++));
     if (!test) {
-        return nullptr;
-    }
-    if (this->detectVarDeclarationWithoutScope(*statement)) {
         return nullptr;
     }
     return DoStatement::Convert(fContext, std::move(statement), std::move(test));
@@ -628,14 +519,14 @@ std::unique_ptr<Statement> IRGenerator::convertReturn(int offset,
 std::unique_ptr<Statement> IRGenerator::convertReturn(const ASTNode& r) {
     SkASSERT(r.fKind == ASTNode::Kind::kReturn);
     if (r.begin() != r.end()) {
-        std::unique_ptr<Expression> value = this->convertExpression(*r.begin());
-        if (!value) {
-            return nullptr;
+        if (std::unique_ptr<Expression> value = this->convertExpression(*r.begin())) {
+            return this->convertReturn(r.fOffset, std::move(value));
+        } else {
+            return this->convertReturn(r.fOffset, Poison::Make(r.fOffset, fContext));
         }
-        return this->convertReturn(r.fOffset, std::move(value));
-    } else {
-        return this->convertReturn(r.fOffset, /*result=*/nullptr);
     }
+
+    return this->convertReturn(r.fOffset, /*result=*/nullptr);
 }
 
 std::unique_ptr<Statement> IRGenerator::convertBreak(const ASTNode& b) {
@@ -658,70 +549,47 @@ std::unique_ptr<Statement> IRGenerator::convertDiscard(const ASTNode& d) {
     return DiscardStatement::Make(d.fOffset);
 }
 
-std::unique_ptr<Block> IRGenerator::applyInvocationIDWorkaround(std::unique_ptr<Block> main) {
-    Layout invokeLayout;
-    Modifiers invokeModifiers(invokeLayout, Modifiers::kHasSideEffects_Flag);
-    const FunctionDeclaration* invokeDecl = fSymbolTable->add(std::make_unique<FunctionDeclaration>(
-            /*offset=*/-1,
-            this->modifiersPool().add(invokeModifiers),
-            "_invoke",
-            std::vector<const Variable*>(),
-            fContext.fTypes.fVoid.get(),
-            fIsBuiltinCode));
-    auto invokeDef = std::make_unique<FunctionDefinition>(/*offset=*/-1, invokeDecl, fIsBuiltinCode,
-                                                          std::move(main));
-    invokeDecl->setDefinition(invokeDef.get());
-    fProgramElements->push_back(std::move(invokeDef));
-
-    using namespace SkSL::dsl;
-    DSLGlobalVar loopIdx("sk_InvocationID");
-    std::unique_ptr<Expression> endPrimitive = this->convertIdentifier(/*offset=*/-1,
-                                                                       "EndPrimitive");
-    SkASSERT(endPrimitive);
-
-    std::unique_ptr<Statement> block = DSLBlock(
-        For(loopIdx = 0, loopIdx < fInvocations, loopIdx++, DSLBlock(
-            DSLFunction(invokeDecl)(),
-            DSLExpression(std::move(endPrimitive))({})
-        ))
-    ).release();
-    return std::unique_ptr<Block>(&block.release()->as<Block>());
-}
-
-std::unique_ptr<Statement> IRGenerator::getNormalizeSkPositionCode() {
+void IRGenerator::appendRTAdjustFixupToVertexMain(const FunctionDeclaration& decl, Block* body) {
     using namespace SkSL::dsl;
     using SkSL::dsl::Swizzle;  // disambiguate from SkSL::Swizzle
+    using OwnerKind = SkSL::FieldAccess::OwnerKind;
 
-    const Variable* skPerVertex = nullptr;
-    if (const ProgramElement* perVertexDecl = fIntrinsics->find(Compiler::PERVERTEX_NAME)) {
-        SkASSERT(perVertexDecl->is<SkSL::InterfaceBlock>());
-        skPerVertex = &perVertexDecl->as<SkSL::InterfaceBlock>().variable();
+    // If this is a vertex program that uses RTAdjust, and this is main()...
+    if ((fRTAdjust || fRTAdjustInterfaceBlock) && decl.isMain() &&
+        ProgramKind::kVertex == this->programKind()) {
+        // ... append a line to the end of the function body which fixes up sk_Position.
+        const Variable* skPerVertex = nullptr;
+        if (const ProgramElement* perVertexDecl = fIntrinsics->find(Compiler::PERVERTEX_NAME)) {
+            SkASSERT(perVertexDecl->is<SkSL::InterfaceBlock>());
+            skPerVertex = &perVertexDecl->as<SkSL::InterfaceBlock>().variable();
+        }
+
+        SkASSERT(skPerVertex);
+        auto Ref = [](const Variable* var) -> std::unique_ptr<Expression> {
+            return VariableReference::Make(/*offset=*/-1, var);
+        };
+        auto Field = [&](const Variable* var, int idx) -> std::unique_ptr<Expression> {
+            return FieldAccess::Make(fContext, Ref(var), idx, OwnerKind::kAnonymousInterfaceBlock);
+        };
+        auto Pos = [&]() -> DSLExpression {
+            return DSLExpression(FieldAccess::Make(fContext, Ref(skPerVertex), /*fieldIndex=*/0,
+                                                   OwnerKind::kAnonymousInterfaceBlock));
+        };
+        auto Adjust = [&]() -> DSLExpression {
+            return DSLExpression(fRTAdjustInterfaceBlock
+                                         ? Field(fRTAdjustInterfaceBlock, fRTAdjustFieldIndex)
+                                         : Ref(fRTAdjust));
+        };
+
+        auto fixupStmt = DSLStatement(
+            Pos() = Float4(Swizzle(Pos(), X, Y) * Swizzle(Adjust(), X, Z) +
+                           Swizzle(Pos(), W, W) * Swizzle(Adjust(), Y, W),
+                           0,
+                           Pos().w())
+        );
+
+        body->children().push_back(fixupStmt.release());
     }
-
-    SkASSERT(skPerVertex && fRTAdjust);
-    auto Ref = [](const Variable* var) -> std::unique_ptr<Expression> {
-        return VariableReference::Make(/*offset=*/-1, var);
-    };
-    auto Field = [&](const Variable* var, int idx) -> std::unique_ptr<Expression> {
-        return FieldAccess::Make(fContext, Ref(var), idx,
-                                 FieldAccess::OwnerKind::kAnonymousInterfaceBlock);
-    };
-    auto Pos = [&]() -> DSLExpression {
-        return DSLExpression(FieldAccess::Make(fContext, Ref(skPerVertex), /*fieldIndex=*/0,
-                                               FieldAccess::OwnerKind::kAnonymousInterfaceBlock));
-    };
-    auto Adjust = [&]() -> DSLExpression {
-        return DSLExpression(fRTAdjustInterfaceBlock
-                                     ? Field(fRTAdjustInterfaceBlock, fRTAdjustFieldIndex)
-                                     : Ref(fRTAdjust));
-    };
-
-    return DSLStatement(
-        Pos() = Float4(Swizzle(Pos(), X, Y) * Swizzle(Adjust(), X, Z) +
-                       Swizzle(Pos(), W, W) * Swizzle(Adjust(), Y, W),
-                       0,
-                       Pos().w())
-    ).release();
 }
 
 void IRGenerator::CheckModifiers(const Context& context,
@@ -729,182 +597,61 @@ void IRGenerator::CheckModifiers(const Context& context,
                                  const Modifiers& modifiers,
                                  int permittedModifierFlags,
                                  int permittedLayoutFlags) {
-    ErrorReporter& errorReporter = context.fErrors;
-    int flags = modifiers.fFlags;
-    auto checkModifier = [&](Modifiers::Flag flag, const char* name) {
-        if (flags & flag) {
-            if (!(permittedModifierFlags & flag)) {
-                errorReporter.error(offset, "'" + String(name) + "' is not permitted here");
-            }
-            flags &= ~flag;
-        }
+    static constexpr struct { Modifiers::Flag flag; const char* name; } kModifierFlags[] = {
+        { Modifiers::kConst_Flag,          "const" },
+        { Modifiers::kIn_Flag,             "in" },
+        { Modifiers::kOut_Flag,            "out" },
+        { Modifiers::kUniform_Flag,        "uniform" },
+        { Modifiers::kFlat_Flag,           "flat" },
+        { Modifiers::kNoPerspective_Flag,  "noperspective" },
+        { Modifiers::kHasSideEffects_Flag, "sk_has_side_effects" },
+        { Modifiers::kInline_Flag,         "inline" },
+        { Modifiers::kNoInline_Flag,       "noinline" },
+        { Modifiers::kHighp_Flag,          "highp" },
+        { Modifiers::kMediump_Flag,        "mediump" },
+        { Modifiers::kLowp_Flag,           "lowp" },
+        { Modifiers::kES3_Flag,            "$es3" },
     };
 
-    checkModifier(Modifiers::kConst_Flag,          "const");
-    checkModifier(Modifiers::kIn_Flag,             "in");
-    checkModifier(Modifiers::kOut_Flag,            "out");
-    checkModifier(Modifiers::kUniform_Flag,        "uniform");
-    checkModifier(Modifiers::kFlat_Flag,           "flat");
-    checkModifier(Modifiers::kNoPerspective_Flag,  "noperspective");
-    checkModifier(Modifiers::kHasSideEffects_Flag, "sk_has_side_effects");
-    checkModifier(Modifiers::kInline_Flag,         "inline");
-    checkModifier(Modifiers::kNoInline_Flag,       "noinline");
-    checkModifier(Modifiers::kHighp_Flag,          "highp");
-    checkModifier(Modifiers::kMediump_Flag,        "mediump");
-    checkModifier(Modifiers::kLowp_Flag,           "lowp");
-    SkASSERT(flags == 0);
+    int modifierFlags = modifiers.fFlags;
+    for (const auto& f : kModifierFlags) {
+        if (modifierFlags & f.flag) {
+            if (!(permittedModifierFlags & f.flag)) {
+                context.fErrors->error(offset, "'" + String(f.name) + "' is not permitted here");
+            }
+            modifierFlags &= ~f.flag;
+        }
+    }
+    SkASSERT(modifierFlags == 0);
+
+    static constexpr struct { Layout::Flag flag; const char* name; } kLayoutFlags[] = {
+        { Layout::kOriginUpperLeft_Flag,          "origin_upper_left"},
+        { Layout::kPushConstant_Flag,             "push_constant"},
+        { Layout::kBlendSupportAllEquations_Flag, "blend_support_all_equations"},
+        { Layout::kSRGBUnpremul_Flag,             "srgb_unpremul"},
+        { Layout::kLocation_Flag,                 "location"},
+        { Layout::kOffset_Flag,                   "offset"},
+        { Layout::kBinding_Flag,                  "binding"},
+        { Layout::kIndex_Flag,                    "index"},
+        { Layout::kSet_Flag,                      "set"},
+        { Layout::kBuiltin_Flag,                  "builtin"},
+        { Layout::kInputAttachmentIndex_Flag,     "input_attachment_index"},
+    };
 
     int layoutFlags = modifiers.fLayout.fFlags;
-    auto checkLayout = [&](Layout::Flag flag, const char* name) {
-        if (layoutFlags & flag) {
-            if (!(permittedLayoutFlags & flag)) {
-                errorReporter.error(offset, "layout qualifier '" + String(name) +
-                                            "' is not permitted here");
+    for (const auto& lf : kLayoutFlags) {
+        if (layoutFlags & lf.flag) {
+            if (!(permittedLayoutFlags & lf.flag)) {
+                context.fErrors->error(
+                        offset, "layout qualifier '" + String(lf.name) + "' is not permitted here");
             }
-            layoutFlags &= ~flag;
+            layoutFlags &= ~lf.flag;
         }
-    };
-
-    checkLayout(Layout::kOriginUpperLeft_Flag,          "origin_upper_left");
-    checkLayout(Layout::kPushConstant_Flag,             "push_constant");
-    checkLayout(Layout::kBlendSupportAllEquations_Flag, "blend_support_all_equations");
-    checkLayout(Layout::kSRGBUnpremul_Flag,             "srgb_unpremul");
-    checkLayout(Layout::kLocation_Flag,                 "location");
-    checkLayout(Layout::kOffset_Flag,                   "offset");
-    checkLayout(Layout::kBinding_Flag,                  "binding");
-    checkLayout(Layout::kIndex_Flag,                    "index");
-    checkLayout(Layout::kSet_Flag,                      "set");
-    checkLayout(Layout::kBuiltin_Flag,                  "builtin");
-    checkLayout(Layout::kInputAttachmentIndex_Flag,     "input_attachment_index");
-    checkLayout(Layout::kPrimitive_Flag,                "primitive-type");
-    checkLayout(Layout::kMaxVertices_Flag,              "max_vertices");
-    checkLayout(Layout::kInvocations_Flag,              "invocations");
+    }
     SkASSERT(layoutFlags == 0);
 }
 
-std::unique_ptr<Block> IRGenerator::finalizeFunction(const FunctionDeclaration& funcDecl,
-                                                     std::unique_ptr<Block> body) {
-    class Finalizer : public ProgramWriter {
-    public:
-        Finalizer(IRGenerator* irGenerator, const FunctionDeclaration* function)
-            : fIRGenerator(irGenerator)
-            , fFunction(function) {}
-
-        ~Finalizer() override {
-            SkASSERT(!fBreakableLevel);
-            SkASSERT(!fContinuableLevel);
-        }
-
-        bool functionReturnsValue() const {
-            return !fFunction->returnType().isVoid();
-        }
-
-        bool visitExpression(Expression& expr) override {
-            // Do not recurse into expressions.
-            return false;
-        }
-
-        bool visitStatement(Statement& stmt) override {
-            switch (stmt.kind()) {
-                case Statement::Kind::kReturn: {
-                    // early returns from a vertex main function will bypass the sk_Position
-                    // normalization, so SkASSERT that we aren't doing that. It is of course
-                    // possible to fix this by adding a normalization before each return, but it
-                    // will probably never actually be necessary.
-                    SkASSERT(fIRGenerator->programKind() != ProgramKind::kVertex ||
-                             !fIRGenerator->fRTAdjust ||
-                             !fFunction->isMain());
-
-                    // Verify that the return statement matches the function's return type.
-                    ReturnStatement& returnStmt = stmt.as<ReturnStatement>();
-                    const Type& returnType = fFunction->returnType();
-                    if (returnStmt.expression()) {
-                        if (this->functionReturnsValue()) {
-                            // Coerce return expression to the function's return type.
-                            returnStmt.setExpression(fIRGenerator->coerce(
-                                    std::move(returnStmt.expression()), returnType));
-                        } else {
-                            // Returning something from a function with a void return type.
-                            fIRGenerator->errorReporter().error(returnStmt.fOffset,
-                                                     "may not return a value from a void function");
-                        }
-                    } else {
-                        if (this->functionReturnsValue()) {
-                            // Returning nothing from a function with a non-void return type.
-                            fIRGenerator->errorReporter().error(returnStmt.fOffset,
-                                  "expected function to return '" + returnType.displayName() + "'");
-                        }
-                    }
-                    break;
-                }
-                case Statement::Kind::kDo:
-                case Statement::Kind::kFor: {
-                    ++fBreakableLevel;
-                    ++fContinuableLevel;
-                    bool result = INHERITED::visitStatement(stmt);
-                    --fContinuableLevel;
-                    --fBreakableLevel;
-                    return result;
-                }
-                case Statement::Kind::kSwitch: {
-                    ++fBreakableLevel;
-                    bool result = INHERITED::visitStatement(stmt);
-                    --fBreakableLevel;
-                    return result;
-                }
-                case Statement::Kind::kBreak:
-                    if (!fBreakableLevel) {
-                        fIRGenerator->errorReporter().error(stmt.fOffset,
-                                                 "break statement must be inside a loop or switch");
-                    }
-                    break;
-                case Statement::Kind::kContinue:
-                    if (!fContinuableLevel) {
-                        fIRGenerator->errorReporter().error(stmt.fOffset,
-                                                        "continue statement must be inside a loop");
-                    }
-                    break;
-                default:
-                    break;
-            }
-            return INHERITED::visitStatement(stmt);
-        }
-
-    private:
-        IRGenerator* fIRGenerator;
-        const FunctionDeclaration* fFunction;
-        // how deeply nested we are in breakable constructs (for, do, switch).
-        int fBreakableLevel = 0;
-        // how deeply nested we are in continuable constructs (for, do).
-        int fContinuableLevel = 0;
-
-        using INHERITED = ProgramWriter;
-    };
-
-    bool isMain = funcDecl.isMain();
-    bool needInvocationIDWorkaround = fInvocations != -1 && isMain &&
-                                      !this->caps().gsInvocationsSupport();
-    if (needInvocationIDWorkaround) {
-        body = this->applyInvocationIDWorkaround(std::move(body));
-    }
-    if (ProgramKind::kVertex == this->programKind() && isMain && fRTAdjust) {
-        body->children().push_back(this->getNormalizeSkPositionCode());
-    }
-
-    Finalizer finalizer{this, &funcDecl};
-    finalizer.visitStatement(*body);
-
-    if (Analysis::CanExitWithoutReturningValue(funcDecl, *body)) {
-        this->errorReporter().error(funcDecl.fOffset, "function '" + funcDecl.name() +
-                                                      "' can exit without returning a value");
-    }
-    return body;
-}
-
 void IRGenerator::convertFunction(const ASTNode& f) {
-    SkASSERT(fReferencedIntrinsics.empty());
-    SK_AT_SCOPE_EXIT(fReferencedIntrinsics.clear());
-
     auto iter = f.begin();
     const Type* returnType = this->convertType(*(iter++), /*allowVoid=*/true);
     if (returnType == nullptr) {
@@ -977,9 +724,9 @@ void IRGenerator::convertFunction(const ASTNode& f) {
         if (!body) {
             return;
         }
-        body = this->finalizeFunction(*decl, std::move(body));
-        auto result = std::make_unique<FunctionDefinition>(
-                f.fOffset, decl, fIsBuiltinCode, std::move(body), std::move(fReferencedIntrinsics));
+        this->appendRTAdjustFixupToVertexMain(*decl, body.get());
+        std::unique_ptr<FunctionDefinition> result = FunctionDefinition::Convert(
+                fContext, f.fOffset, *decl, std::move(body), fIsBuiltinCode);
         decl->setDefinition(result.get());
         result->setSource(&f);
         fProgramElements->push_back(std::move(result));
@@ -1003,11 +750,26 @@ std::unique_ptr<StructDefinition> IRGenerator::convertStructDefinition(const AST
     return std::make_unique<StructDefinition>(node.fOffset, *type);
 }
 
+void IRGenerator::scanInterfaceBlock(SkSL::InterfaceBlock& intf) {
+    const std::vector<Type::Field>& fields = intf.variable().type().componentType().fields();
+    for (size_t i = 0; i < fields.size(); ++i) {
+        const Type::Field& f = fields[i];
+        if (f.fName == Compiler::RTADJUST_NAME) {
+            if (*f.fType == *fContext.fTypes.fFloat4) {
+                fRTAdjustInterfaceBlock = &intf.variable();
+                fRTAdjustFieldIndex = i;
+            } else {
+                this->errorReporter().error(intf.fOffset, "sk_RTAdjust must have type 'float4'");
+            }
+        }
+    }
+}
+
 std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const ASTNode& intf) {
     if (this->programKind() != ProgramKind::kFragment &&
-        this->programKind() != ProgramKind::kVertex &&
-        this->programKind() != ProgramKind::kGeometry) {
-        this->errorReporter().error(intf.fOffset, "interface block is not allowed here");
+        this->programKind() != ProgramKind::kVertex) {
+        this->errorReporter().error(intf.fOffset,
+                "interface blocks are not allowed in this kind of program");
         return nullptr;
     }
 
@@ -1016,7 +778,6 @@ std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const A
     std::shared_ptr<SymbolTable> old = fSymbolTable;
     std::shared_ptr<SymbolTable> symbols;
     std::vector<Type::Field> fields;
-    bool foundRTAdjust = false;
     auto iter = intf.begin();
     {
         AutoSymbolTable table(this);
@@ -1029,23 +790,8 @@ std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const A
             }
             for (const auto& decl : decls) {
                 const VarDeclaration& vd = decl->as<VarDeclaration>();
-                if (vd.var().type().isOpaque()) {
-                    this->errorReporter().error(decl->fOffset,
-                                                "opaque type '" + vd.var().type().name() +
-                                                        "' is not permitted in an interface block");
-                }
-                if (&vd.var() == fRTAdjust) {
-                    foundRTAdjust = true;
-                    SkASSERT(vd.var().type() == *fContext.fTypes.fFloat4);
-                    fRTAdjustFieldIndex = fields.size();
-                }
                 fields.push_back(Type::Field(vd.var().modifiers(), vd.var().name(),
                                             &vd.var().type()));
-                if (vd.value()) {
-                    this->errorReporter().error(
-                            decl->fOffset,
-                            "initializers are not permitted on interface block fields");
-                }
             }
         }
     }
@@ -1055,16 +801,9 @@ std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const A
     int arraySize = 0;
     if (id.fIsArray) {
         const ASTNode& size = *(iter++);
-        if (size) {
-            // convertArraySize rejects unsized arrays. This is the one place we allow those, but
-            // we've already checked for that, so this is verifying the other aspects (constant,
-            // positive, not too large).
-            arraySize = this->convertArraySize(*type, size.fOffset, size);
-            if (!arraySize) {
-                return nullptr;
-            }
-        } else {
-            arraySize = Type::kUnsizedArray;
+        arraySize = this->convertArraySize(*type, size.fOffset, size);
+        if (!arraySize) {
+            return nullptr;
         }
         type = symbols->addArrayDimension(type, arraySize);
     }
@@ -1075,9 +814,6 @@ std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const A
                                        type,
                                        fIsBuiltinCode,
                                        Variable::Storage::kGlobal));
-    if (foundRTAdjust) {
-        fRTAdjustInterfaceBlock = var;
-    }
     if (id.fInstanceName.length()) {
         old->addWithoutOwnership(var);
     } else {
@@ -1085,12 +821,10 @@ std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const A
             old->add(std::make_unique<Field>(intf.fOffset, var, (int)i));
         }
     }
-    return std::make_unique<SkSL::InterfaceBlock>(intf.fOffset,
-                                                  var,
-                                                  id.fTypeName,
-                                                  id.fInstanceName,
-                                                  arraySize,
-                                                  symbols);
+    std::unique_ptr<SkSL::InterfaceBlock> result = std::make_unique<SkSL::InterfaceBlock>(
+            intf.fOffset, var, id.fTypeName, id.fInstanceName, arraySize, symbols);
+    this->scanInterfaceBlock(*result);
+    return result;
 }
 
 void IRGenerator::convertGlobalVarDeclarations(const ASTNode& decl) {
@@ -1108,21 +842,6 @@ void IRGenerator::convertGlobalVarDeclarations(const ASTNode& decl) {
     }
 }
 
-bool IRGenerator::typeContainsPrivateFields(const Type& type) {
-    // Checks for usage of private types, including fields inside a struct.
-    if (type.isPrivate()) {
-        return true;
-    }
-    if (type.isStruct()) {
-        for (const auto& f : type.fields()) {
-            if (this->typeContainsPrivateFields(*f.fType)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 const Type* IRGenerator::convertType(const ASTNode& type, bool allowVoid) {
     skstd::string_view name = type.getStringView();
     const Symbol* symbol = (*fSymbolTable)[name];
@@ -1137,9 +856,15 @@ const Type* IRGenerator::convertType(const ASTNode& type, bool allowVoid) {
                                     "type '" + name + "' not allowed in this context");
         return nullptr;
     }
-    if (!fIsBuiltinCode && this->typeContainsPrivateFields(*result)) {
-        this->errorReporter().error(type.fOffset, "type '" + name + "' is private");
-        return nullptr;
+    if (!fIsBuiltinCode) {
+        if (result->containsPrivateFields()) {
+            this->errorReporter().error(type.fOffset, "type '" + name + "' is private");
+            return nullptr;
+        }
+        if (this->strictES2Mode() && !result->allowedInES2()) {
+            this->errorReporter().error(type.fOffset, "type '" + name + "' is not supported");
+            return nullptr;
+        }
     }
     if (isArray) {
         auto iter = type.begin();
@@ -1177,7 +902,7 @@ std::unique_ptr<Expression> IRGenerator::convertExpression(const ASTNode& expr) 
         case ASTNode::Kind::kTernary:
             return this->convertTernaryExpression(expr);
         default:
-            SkDEBUGFAILF("unsupported expression: %s\n", expr.description().c_str());
+            SkDEBUGFAIL("unsupported expression");
             return nullptr;
     }
 }
@@ -1314,9 +1039,6 @@ std::unique_ptr<Expression> IRGenerator::call(int offset,
         if (function.intrinsicKind() == k_dFdy_IntrinsicKind) {
             fInputs.fUseFlipRTUniform = true;
         }
-        if (function.definition()) {
-            fReferencedIntrinsics.insert(&function);
-        }
         if (!fIsBuiltinCode && fIntrinsics) {
             this->copyIntrinsicIfNeeded(function);
         }
@@ -1331,7 +1053,10 @@ std::unique_ptr<Expression> IRGenerator::call(int offset,
  * the call is not valid.
  */
 CoercionCost IRGenerator::callCost(const FunctionDeclaration& function,
-                                   const ExpressionArray& arguments) {
+                                   const ExpressionArray& arguments) const {
+    if (this->strictES2Mode() && (function.modifiers().fFlags & Modifiers::kES3_Flag)) {
+        return CoercionCost::Impossible();
+    }
     if (function.parameters().size() != arguments.size()) {
         return CoercionCost::Impossible();
     }
@@ -1345,6 +1070,24 @@ CoercionCost IRGenerator::callCost(const FunctionDeclaration& function,
         total = total + arguments[i]->coercionCost(*types[i]);
     }
     return total;
+}
+
+const FunctionDeclaration* IRGenerator::findBestFunctionForCall(
+        const std::vector<const FunctionDeclaration*>& functions,
+        const ExpressionArray& arguments) const {
+    if (functions.size() == 1) {
+        return functions.front();
+    }
+    CoercionCost bestCost = CoercionCost::Impossible();
+    const FunctionDeclaration* best = nullptr;
+    for (const auto& f : functions) {
+        CoercionCost cost = this->callCost(*f, arguments);
+        if (cost < bestCost) {
+            bestCost = cost;
+            best = f;
+        }
+    }
+    return best;
 }
 
 std::unique_ptr<Expression> IRGenerator::call(int offset,
@@ -1380,32 +1123,44 @@ std::unique_ptr<Expression> IRGenerator::call(int offset,
         case Expression::Kind::kFunctionReference: {
             const FunctionReference& ref = functionValue->as<FunctionReference>();
             const std::vector<const FunctionDeclaration*>& functions = ref.functions();
-            CoercionCost bestCost = CoercionCost::Impossible();
-            const FunctionDeclaration* best = nullptr;
-            if (functions.size() > 1) {
-                for (const auto& f : functions) {
-                    CoercionCost cost = this->callCost(*f, arguments);
-                    if (cost < bestCost) {
-                        bestCost = cost;
-                        best = f;
-                    }
-                }
-                if (best) {
-                    return this->call(offset, *best, std::move(arguments));
-                }
-                String msg = "no match for " + functions[0]->name() + "(";
-                String separator;
-                for (size_t i = 0; i < arguments.size(); i++) {
-                    msg += separator;
-                    separator = ", ";
-                    msg += arguments[i]->type().displayName();
-                }
-                msg += ")";
-                this->errorReporter().error(offset, msg);
-                return nullptr;
+            const FunctionDeclaration* best = this->findBestFunctionForCall(functions, arguments);
+            if (best) {
+                return this->call(offset, *best, std::move(arguments));
             }
-            return this->call(offset, *functions[0], std::move(arguments));
+            String msg = "no match for " + functions[0]->name() + "(";
+            String separator;
+            for (size_t i = 0; i < arguments.size(); i++) {
+                msg += separator;
+                separator = ", ";
+                msg += arguments[i]->type().displayName();
+            }
+            msg += ")";
+            this->errorReporter().error(offset, msg);
+            return nullptr;
         }
+        case Expression::Kind::kMethodReference: {
+            MethodReference& ref = functionValue->as<MethodReference>();
+            arguments.push_back(std::move(ref.self()));
+
+            const std::vector<const FunctionDeclaration*>& functions = ref.functions();
+            const FunctionDeclaration* best = this->findBestFunctionForCall(functions, arguments);
+            if (best) {
+                return this->call(offset, *best, std::move(arguments));
+            }
+            String msg = "no match for " + arguments.back()->type().displayName() +
+                         "::" + functions[0]->name().substr(1) + "(";
+            String separator;
+            for (size_t i = 0; i < arguments.size() - 1; i++) {
+                msg += separator;
+                separator = ", ";
+                msg += arguments[i]->type().displayName();
+            }
+            msg += ")";
+            this->errorReporter().error(offset, msg);
+            return nullptr;
+        }
+        case Expression::Kind::kPoison:
+            return functionValue;
         default:
             this->errorReporter().error(offset, "not a function");
             return nullptr;
@@ -1445,8 +1200,7 @@ std::unique_ptr<Expression> IRGenerator::convertIndexExpression(const ASTNode& i
     if (!converted) {
         return nullptr;
     }
-    return IndexExpression::Convert(fContext, *fSymbolTable, std::move(base),
-                                    std::move(converted));
+    return IndexExpression::Convert(fContext, *fSymbolTable, std::move(base), std::move(converted));
 }
 
 std::unique_ptr<Expression> IRGenerator::convertCallExpression(const ASTNode& callNode) {
@@ -1474,8 +1228,8 @@ std::unique_ptr<Expression> IRGenerator::convertFieldExpression(const ASTNode& f
     }
     const skstd::string_view& field = fieldNode.getStringView();
     const Type& baseType = base->type();
-    if (baseType == *fContext.fTypes.fSkCaps || baseType.isStruct()) {
-        return FieldAccess::Convert(fContext, std::move(base), field);
+    if (baseType == *fContext.fTypes.fSkCaps || baseType.isStruct() || baseType.isEffectChild()) {
+        return FieldAccess::Convert(fContext, *fSymbolTable, std::move(base), field);
     }
     return this->convertSwizzle(std::move(base), field);
 }
@@ -1487,29 +1241,6 @@ std::unique_ptr<Expression> IRGenerator::convertPostfixExpression(const ASTNode&
         return nullptr;
     }
     return PostfixExpression::Convert(fContext, std::move(base), expression.getOperator());
-}
-
-void IRGenerator::checkValid(const Expression& expr) {
-    switch (expr.kind()) {
-        case Expression::Kind::kFunctionCall: {
-            const FunctionDeclaration& decl = expr.as<FunctionCall>().function();
-            if (!decl.isBuiltin() && !decl.definition()) {
-                this->errorReporter().error(expr.fOffset,
-                                            "function '" + decl.description() + "' is not defined");
-            }
-            break;
-        }
-        case Expression::Kind::kFunctionReference:
-        case Expression::Kind::kTypeReference:
-            SkDEBUGFAIL("invalid reference-expression, should have been reported by coerce()");
-            this->errorReporter().error(expr.fOffset, "invalid expression");
-            break;
-        default:
-            if (expr.type() == *fContext.fTypes.fInvalid) {
-                this->errorReporter().error(expr.fOffset, "invalid expression");
-            }
-            break;
-    }
 }
 
 void IRGenerator::findAndDeclareBuiltinVariables() {
@@ -1594,29 +1325,10 @@ void IRGenerator::start(const ParsedModule& base,
     fIsBuiltinCode = isBuiltinCode;
 
     fInputs = {};
-    fInvocations = -1;
     fRTAdjust = nullptr;
     fRTAdjustInterfaceBlock = nullptr;
     fDefinedStructs.clear();
     this->pushSymbolTable();
-
-    if (this->programKind() == ProgramKind::kGeometry && !fIsBuiltinCode) {
-        // Declare sk_InvocationID programmatically. With invocations support, it's an 'in' builtin.
-        // If we're applying the workaround, then it's a plain global.
-        bool workaround = !this->caps().gsInvocationsSupport();
-        Modifiers m;
-        if (!workaround) {
-            m.fFlags = Modifiers::kIn_Flag;
-            m.fLayout.fBuiltin = SK_INVOCATIONID_BUILTIN;
-        }
-        auto var = std::make_unique<Variable>(/*offset=*/-1, this->modifiersPool().add(m),
-                                              "sk_InvocationID", fContext.fTypes.fInt.get(),
-                                              /*builtin=*/false, Variable::Storage::kGlobal);
-        auto decl = VarDeclaration::Make(fContext, var.get(), fContext.fTypes.fInt.get(),
-                                         /*arraySize=*/0, /*value=*/nullptr);
-        fSymbolTable->add(std::move(var));
-        fProgramElements->push_back(std::make_unique<GlobalVarDeclaration>(std::move(decl)));
-    }
 
     if (this->settings().fExternalFunctions) {
         // Add any external values to the new symbol table, so they're only visible to this Program.
@@ -1656,6 +1368,16 @@ void IRGenerator::start(const ParsedModule& base,
         fSymbolTable->addAlias("uint2", fContext.fTypes.fUInt2.get());
         fSymbolTable->addAlias("uint3", fContext.fTypes.fUInt3.get());
         fSymbolTable->addAlias("uint4", fContext.fTypes.fUInt4.get());
+
+        fSymbolTable->addAlias("short", fContext.fTypes.fShort.get());
+        fSymbolTable->addAlias("short2", fContext.fTypes.fShort2.get());
+        fSymbolTable->addAlias("short3", fContext.fTypes.fShort3.get());
+        fSymbolTable->addAlias("short4", fContext.fTypes.fShort4.get());
+
+        fSymbolTable->addAlias("ushort", fContext.fTypes.fUShort.get());
+        fSymbolTable->addAlias("ushort2", fContext.fTypes.fUShort2.get());
+        fSymbolTable->addAlias("ushort3", fContext.fTypes.fUShort3.get());
+        fSymbolTable->addAlias("ushort4", fContext.fTypes.fUShort4.get());
     }
 }
 
@@ -1663,37 +1385,6 @@ IRGenerator::IRBundle IRGenerator::finish() {
     // Variables defined in the pre-includes need their declaring elements added to the program
     if (!fIsBuiltinCode && fIntrinsics) {
         this->findAndDeclareBuiltinVariables();
-    }
-
-    // Do a pass looking for dangling FunctionReference or TypeReference expressions
-    class FindIllegalExpressions : public ProgramVisitor {
-    public:
-        FindIllegalExpressions(IRGenerator* generator) : fGenerator(generator) {}
-
-        bool visitExpression(const Expression& e) override {
-            fGenerator->checkValid(e);
-            return INHERITED::visitExpression(e);
-        }
-
-        IRGenerator* fGenerator;
-        using INHERITED = ProgramVisitor;
-        using INHERITED::visitProgramElement;
-    };
-    for (const auto& pe : *fProgramElements) {
-        FindIllegalExpressions{this}.visitProgramElement(*pe);
-    }
-
-    // If we're in ES2 mode (runtime effects), do a pass to enforce Appendix A, Section 5 of the
-    // GLSL ES 1.00 spec -- Indexing. Don't bother if we've already found errors - this logic
-    // assumes that all loops meet the criteria of Section 4, and if they don't, could crash.
-    if (this->strictES2Mode() && this->errorReporter().errorCount() == 0) {
-        for (const auto& pe : *fProgramElements) {
-            Analysis::ValidateIndexingForES2(*pe, this->errorReporter());
-        }
-    }
-
-    if (this->strictES2Mode()) {
-        Analysis::DetectStaticRecursion(SkMakeSpan(*fProgramElements), this->errorReporter());
     }
 
     return IRBundle{std::move(*fProgramElements),
@@ -1751,7 +1442,7 @@ IRGenerator::IRBundle IRGenerator::convertProgram(
                     break;
                 }
                 default:
-                    SkDEBUGFAILF("unsupported declaration: %s\n", decl.description().c_str());
+                    SkDEBUGFAIL("unsupported declaration");
                     break;
             }
         }

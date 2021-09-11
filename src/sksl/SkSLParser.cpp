@@ -22,23 +22,6 @@
 namespace SkSL {
 
 static constexpr int kMaxParseDepth = 50;
-static constexpr int kMaxStructDepth = 8;
-
-static bool struct_is_too_deeply_nested(const Type& type, int limit) {
-    if (limit < 0) {
-        return true;
-    }
-
-    if (type.isStruct()) {
-        for (const Type::Field& f : type.fields()) {
-            if (struct_is_too_deeply_nested(*f.fType, limit - 1)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
 
 static int parse_modifier_token(Token::Kind token) {
     switch (token) {
@@ -55,6 +38,7 @@ static int parse_modifier_token(Token::Kind token) {
         case Token::Kind::TK_HIGHP:          return Modifiers::kHighp_Flag;
         case Token::Kind::TK_MEDIUMP:        return Modifiers::kMediump_Flag;
         case Token::Kind::TK_LOWP:           return Modifiers::kLowp_Flag;
+        case Token::Kind::TK_ES3:            return Modifiers::kES3_Flag;
         default:                             return 0;
     }
 }
@@ -99,15 +83,6 @@ void Parser::InitLayoutMap() {
     TOKEN(ORIGIN_UPPER_LEFT,            "origin_upper_left");
     TOKEN(BLEND_SUPPORT_ALL_EQUATIONS,  "blend_support_all_equations");
     TOKEN(PUSH_CONSTANT,                "push_constant");
-    TOKEN(POINTS,                       "points");
-    TOKEN(LINES,                        "lines");
-    TOKEN(LINE_STRIP,                   "line_strip");
-    TOKEN(LINES_ADJACENCY,              "lines_adjacency");
-    TOKEN(TRIANGLES,                    "triangles");
-    TOKEN(TRIANGLE_STRIP,               "triangle_strip");
-    TOKEN(TRIANGLES_ADJACENCY,          "triangles_adjacency");
-    TOKEN(MAX_VERTICES,                 "max_vertices");
-    TOKEN(INVOCATIONS,                  "invocations");
     TOKEN(SRGB_UNPREMUL,                "srgb_unpremul");
     #undef TOKEN
 }
@@ -116,7 +91,7 @@ Parser::Parser(skstd::string_view text, SymbolTable& symbols, ErrorReporter& err
 : fText(text)
 , fPushback(Token::Kind::TK_NONE, -1, -1)
 , fSymbols(symbols)
-, fErrors(errors) {
+, fErrors(&errors) {
     fLexer.start(text);
     static const bool layoutMapInitialized = []{ return (void)InitLayoutMap(), true; }();
     (void) layoutMapInitialized;
@@ -152,7 +127,7 @@ std::unique_ptr<ASTFile> Parser::compilationUnit() {
                 return std::move(fFile);
             case Token::Kind::TK_DIRECTIVE: {
                 ASTNode::ID dir = this->directive();
-                if (fErrors.errorCount()) {
+                if (fErrors->errorCount()) {
                     return nullptr;
                 }
                 if (dir) {
@@ -166,12 +141,13 @@ std::unique_ptr<ASTFile> Parser::compilationUnit() {
             }
             default: {
                 ASTNode::ID decl = this->declaration();
-                if (fErrors.errorCount()) {
+                if (fErrors->errorCount()) {
                     return nullptr;
                 }
                 if (decl) {
                     getNode(result).addChild(decl);
                 }
+                break;
             }
         }
     }
@@ -260,7 +236,7 @@ void Parser::error(Token token, String msg) {
 }
 
 void Parser::error(int offset, String msg) {
-    fErrors.error(offset, msg);
+    fErrors->error(offset, msg);
 }
 
 bool Parser::isType(skstd::string_view name) {
@@ -400,6 +376,7 @@ ASTNode::ID Parser::varDeclarationsOrExpressionStatement() {
         Checkpoint checkpoint(this);
         VarDeclarationsPrefix prefix;
         if (this->varDeclarationsPrefix(&prefix)) {
+            checkpoint.accept();
             return this->varDeclarationEnd(prefix.modifiers, prefix.type, this->text(prefix.name));
         }
 
@@ -471,6 +448,7 @@ ASTNode::ID Parser::structDeclaration() {
             const ASTNode::VarData& vd = var.getVarData();
 
             // Read array size if one is present.
+            const Type* fieldType = type;
             if (vd.fIsArray) {
                 const ASTNode& size = *var.begin();
                 if (!size || size.fKind != ASTNode::Kind::kInt) {
@@ -483,10 +461,10 @@ ASTNode::ID Parser::structDeclaration() {
                 }
                 // Add the array dimensions to our type.
                 int arraySize = size.getInt();
-                type = fSymbols.addArrayDimension(type, arraySize);
+                fieldType = fSymbols.addArrayDimension(fieldType, arraySize);
             }
 
-            fields.push_back(Type::Field(modifiers, vd.fName, type));
+            fields.push_back(Type::Field(modifiers, vd.fName, fieldType));
             if (vd.fIsArray ? var.begin()->fNext : var.fFirstChild) {
                 this->error(declsNode.fOffset, "initializers are not permitted on struct fields");
             }
@@ -501,7 +479,7 @@ ASTNode::ID Parser::structDeclaration() {
         return ASTNode::ID::Invalid();
     }
     std::unique_ptr<Type> newType = Type::MakeStructType(name.fOffset, this->text(name), fields);
-    if (struct_is_too_deeply_nested(*newType, kMaxStructDepth)) {
+    if (newType->isTooDeeplyNested()) {
         this->error(name.fOffset, "struct '" + this->text(name) + "' is too deeply nested");
         return ASTNode::ID::Invalid();
     }
@@ -681,13 +659,10 @@ Layout Parser::layout() {
     int set = -1;
     int builtin = -1;
     int inputAttachmentIndex = -1;
-    Layout::Primitive primitive = Layout::kUnspecified_Primitive;
-    int maxVertices = -1;
-    int invocations = -1;
     if (this->checkNext(Token::Kind::TK_LAYOUT)) {
         if (!this->expect(Token::Kind::TK_LPAREN, "'('")) {
-            return Layout(flags, location, offset, binding, index, set, builtin,
-                          inputAttachmentIndex, primitive, maxVertices, invocations);
+            return Layout(
+                    flags, location, offset, binding, index, set, builtin, inputAttachmentIndex);
         }
         for (;;) {
             Token t = this->nextToken();
@@ -697,13 +672,6 @@ Layout Parser::layout() {
                     this->error(t, "layout qualifier '" + text + "' appears more than once");
                 }
                 flags |= f;
-            };
-            auto setPrimitive = [&](Layout::Primitive p) {
-                if (flags & Layout::kPrimitive_Flag) {
-                    this->error(t, "only one primitive-type layout qualifier is allowed");
-                }
-                flags |= Layout::kPrimitive_Flag;
-                primitive = p;
             };
 
             auto found = layoutTokens->find(text);
@@ -749,35 +717,6 @@ Layout Parser::layout() {
                         setFlag(Layout::kInputAttachmentIndex_Flag);
                         inputAttachmentIndex = this->layoutInt();
                         break;
-                    case LayoutToken::POINTS:
-                        setPrimitive(Layout::kPoints_Primitive);
-                        break;
-                    case LayoutToken::LINES:
-                        setPrimitive(Layout::kLines_Primitive);
-                        break;
-                    case LayoutToken::LINE_STRIP:
-                        setPrimitive(Layout::kLineStrip_Primitive);
-                        break;
-                    case LayoutToken::LINES_ADJACENCY:
-                        setPrimitive(Layout::kLinesAdjacency_Primitive);
-                        break;
-                    case LayoutToken::TRIANGLES:
-                        setPrimitive(Layout::kTriangles_Primitive);
-                        break;
-                    case LayoutToken::TRIANGLE_STRIP:
-                        setPrimitive(Layout::kTriangleStrip_Primitive);
-                        break;
-                    case LayoutToken::TRIANGLES_ADJACENCY:
-                        setPrimitive(Layout::kTrianglesAdjacency_Primitive);
-                        break;
-                    case LayoutToken::MAX_VERTICES:
-                        setFlag(Layout::kMaxVertices_Flag);
-                        maxVertices = this->layoutInt();
-                        break;
-                    case LayoutToken::INVOCATIONS:
-                        setFlag(Layout::kInvocations_Flag);
-                        invocations = this->layoutInt();
-                        break;
                     default:
                         this->error(t, "'" + text + "' is not a valid layout qualifier");
                         break;
@@ -793,8 +732,7 @@ Layout Parser::layout() {
             }
         }
     }
-    return Layout(flags, location, offset, binding, index, set, builtin, inputAttachmentIndex,
-                  primitive, maxVertices, invocations);
+    return Layout(flags, location, offset, binding, index, set, builtin, inputAttachmentIndex);
 }
 
 /* layout? (UNIFORM | CONST | IN | OUT | INOUT | FLAT | NOPERSPECTIVE | INLINE)* */

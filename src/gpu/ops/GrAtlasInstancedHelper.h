@@ -11,7 +11,6 @@
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrSurfaceProxyView.h"
-#include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 
 struct GrVertexWriter;
@@ -80,7 +79,8 @@ public:
     //
     // The caller is responsible to store "atlasAdjustUniformHandle" and pass it to
     // setUniformData().
-    void injectShaderCode(const GrGLSLGeometryProcessor::EmitArgs&, const GrShaderVar& devCoord,
+    void injectShaderCode(const GrGeometryProcessor::ProgramImpl::EmitArgs&,
+                          const GrShaderVar& devCoord,
                           GrGLSLUniformHandler::UniformHandle* atlasAdjustUniformHandle) const;
 
     // The atlas clip requires one uniform value -- "atlasAdjustUniform". The caller should have

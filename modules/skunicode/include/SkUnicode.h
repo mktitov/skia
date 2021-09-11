@@ -116,6 +116,7 @@ class SKUNICODE_API SkUnicode {
         virtual bool isWhitespace(SkUnichar utf8) = 0;
         virtual bool isSpace(SkUnichar utf8) = 0;
         virtual SkString convertUtf16ToUtf8(const std::u16string& utf16) = 0;
+        virtual SkString toUpper(const SkString&) = 0;
 
         // Methods used in SkShaper and SkText
         virtual std::unique_ptr<SkBidiIterator> makeBidiIterator
@@ -190,13 +191,11 @@ class SKUNICODE_API SkUnicode {
         void forEachBreak(const char16_t utf16[], int utf16Units, SkUnicode::BreakType type, Callback&& callback) {
             auto iter = makeBreakIterator(type);
             iter->setText(utf16, utf16Units);
-            while (true) {
-                auto pos = iter->next();
-                if (iter->isDone()) {
-                    break;
-                }
+            auto pos = iter->first();
+            do {
                 callback(pos, iter->status());
-            }
+                pos = iter->next();
+            } while (!iter->isDone());
         }
 
         virtual void reorderVisual(const BidiLevel runLevels[], int levelsCount, int32_t logicalFromVisual[]) = 0;

@@ -15,7 +15,6 @@
 #include "include/private/SkTOptional.h"
 #include "include/sksl/DSL.h"
 #include "include/sksl/DSLSymbols.h"
-#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLLexer.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
@@ -23,6 +22,7 @@
 
 namespace SkSL {
 
+class ErrorReporter;
 struct Modifiers;
 class SymbolTable;
 
@@ -44,15 +44,6 @@ public:
         EARLY_FRAGMENT_TESTS,
         BLEND_SUPPORT_ALL_EQUATIONS,
         PUSH_CONSTANT,
-        POINTS,
-        LINES,
-        LINE_STRIP,
-        LINES_ADJACENCY,
-        TRIANGLES,
-        TRIANGLE_STRIP,
-        TRIANGLES_ADJACENCY,
-        MAX_VERTICES,
-        INVOCATIONS,
         MARKER,
         WHEN,
         KEY,
@@ -77,7 +68,9 @@ public:
 
     skstd::string_view text(Token token);
 
-    Position position(Token token);
+    PositionInfo position(Token token);
+
+    PositionInfo position(int offset);
 
 private:
     static void InitLayoutMap();
@@ -130,9 +123,6 @@ private:
      */
     bool expectIdentifier(Token* result);
 
-    ErrorReporter& errors() {
-        return *fErrorReporter;
-    }
     void error(Token token, String msg);
     void error(int offset, String msg);
 
@@ -146,6 +136,10 @@ private:
 
     ASTNode::ID precision();
 
+    SKSL_INT arraySize();
+
+    void directive();
+
     bool declaration();
 
     bool functionDeclarationEnd(const dsl::DSLModifiers& modifiers,
@@ -153,9 +147,10 @@ private:
                                 const Token& name);
 
     struct VarDeclarationsPrefix {
-        dsl::DSLModifiers modifiers;
-        dsl::DSLType type = dsl::DSLType(dsl::kVoid_Type);
-        Token name;
+        PositionInfo fPosition;
+        dsl::DSLModifiers fModifiers;
+        dsl::DSLType fType = dsl::DSLType(dsl::kVoid_Type);
+        Token fName;
     };
 
     bool varDeclarationsPrefix(VarDeclarationsPrefix* prefixData);
@@ -171,8 +166,8 @@ private:
     /* (LBRACKET expression? RBRACKET)* (EQ assignmentExpression)? (COMMA IDENTIFER
        (LBRACKET expression? RBRACKET)* (EQ assignmentExpression)?)* SEMICOLON */
     template<class T>
-    SkTArray<T> varDeclarationEnd(const dsl::DSLModifiers& mods, dsl::DSLType baseType,
-                                  skstd::string_view name);
+    SkTArray<T> varDeclarationEnd(PositionInfo position, const dsl::DSLModifiers& mods,
+                                  dsl::DSLType baseType, skstd::string_view name);
 
     SkTArray<dsl::DSLGlobalVar> globalVarDeclarationEnd(const dsl::DSLModifiers& modifiers,
                                                         dsl::DSLType type, skstd::string_view name);
@@ -255,7 +250,7 @@ private:
             skstd::string_view swizzleMask);
 
     skstd::optional<dsl::Wrapper<dsl::DSLExpression>> call(int offset, dsl::DSLExpression base,
-            SkTArray<dsl::Wrapper<dsl::DSLExpression>> args);
+            ExpressionArray args);
 
     skstd::optional<dsl::Wrapper<dsl::DSLExpression>> suffix(dsl::DSLExpression base);
 
@@ -269,60 +264,72 @@ private:
 
     bool identifier(skstd::string_view* dest);
 
-    class Checkpoint : public dsl::ErrorHandler {
+    class Checkpoint {
     public:
         Checkpoint(DSLParser* p) : fParser(p) {
             fPushbackCheckpoint = fParser->fPushback;
             fLexerCheckpoint = fParser->fLexer.getCheckpoint();
-            fOldErrorHandler = dsl::GetErrorHandler();
-            SkASSERT(fOldErrorHandler);
-            dsl::SetErrorHandler(this);
+            fOldErrorReporter = &dsl::GetErrorReporter();
+            fOldEncounteredFatalError = fParser->fEncounteredFatalError;
+            SkASSERT(fOldErrorReporter);
+            dsl::SetErrorReporter(&fErrorReporter);
         }
 
-        ~Checkpoint() override {
-            SkASSERTF(!fOldErrorHandler,
+        ~Checkpoint() {
+            SkASSERTF(!fOldErrorReporter,
                       "Checkpoint was not accepted or rewound before destruction");
         }
 
         void accept() {
-            this->restoreErrorHandler();
+            this->restoreErrorReporter();
             // Parser errors should have been fatal, but we can encounter other errors like type
             // mismatches despite accepting the parse. Forward those messages to the actual error
             // handler now.
-            for (Error& error : fErrors) {
-                dsl::GetErrorHandler()->handleError(error.fMsg.c_str(),
-                                                    error.fHavePosition ? &error.fPos : nullptr);
-            }
+            fErrorReporter.forwardErrors();
         }
 
         void rewind() {
-            this->restoreErrorHandler();
+            this->restoreErrorReporter();
             fParser->fPushback = fPushbackCheckpoint;
             fParser->fLexer.rewindToCheckpoint(fLexerCheckpoint);
-        }
-
-        void handleError(const char* msg, dsl::PositionInfo* pos) override {
-            fErrors.push_back({String(msg), pos != nullptr, pos ? *pos : dsl::PositionInfo()});
+            fParser->fEncounteredFatalError = fOldEncounteredFatalError;
         }
 
     private:
-        struct Error {
-            String fMsg;
-            bool fHavePosition;
-            dsl::PositionInfo fPos;
+        class ForwardingErrorReporter : public ErrorReporter {
+        public:
+            void handleError(skstd::string_view msg, PositionInfo pos) override {
+                fErrors.push_back({String(msg), pos});
+            }
+
+            void forwardErrors() {
+                for (Error& error : fErrors) {
+                    dsl::GetErrorReporter().error(error.fMsg.c_str(), error.fPos);
+                }
+            }
+
+        private:
+            struct Error {
+                String fMsg;
+                PositionInfo fPos;
+            };
+
+            SkTArray<Error> fErrors;
         };
 
-        void restoreErrorHandler() {
-            SkASSERT(fOldErrorHandler);
-            dsl::SetErrorHandler(fOldErrorHandler);
-            fOldErrorHandler = nullptr;
+        void restoreErrorReporter() {
+            SkASSERT(fOldErrorReporter);
+            fErrorReporter.reportPendingErrors(PositionInfo());
+            dsl::SetErrorReporter(fOldErrorReporter);
+            fOldErrorReporter = nullptr;
         }
 
         DSLParser* fParser;
         Token fPushbackCheckpoint;
         int32_t fLexerCheckpoint;
-        ErrorHandler* fOldErrorHandler;
-        SkTArray<Error> fErrors;
+        ForwardingErrorReporter fErrorReporter;
+        ErrorReporter* fOldErrorReporter;
+        bool fOldEncounteredFatalError;
     };
 
     static std::unordered_map<skstd::string_view, LayoutToken>* layoutTokens;
@@ -330,8 +337,9 @@ private:
     Compiler& fCompiler;
     ProgramSettings fSettings;
     ErrorReporter* fErrorReporter;
+    bool fEncounteredFatalError;
     ProgramKind fKind;
-    String fText;
+    std::unique_ptr<String> fText;
     Lexer fLexer;
     // current parse depth, used to enforce a recursion limit to try to keep us from overflowing the
     // stack on pathological inputs

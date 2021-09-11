@@ -10,8 +10,8 @@
 
 #include <memory>
 
+#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
-#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLPool.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -35,9 +35,6 @@ public:
     // The Context holds all of the built-in types.
     BuiltinTypes fTypes;
 
-    // The Context holds a reference to our error reporter.
-    ErrorReporter& fErrors;
-
     // The Context holds a reference to our shader caps bits.
     const ShaderCapsClass& fCaps;
 
@@ -46,6 +43,9 @@ public:
 
     // The Context holds a pointer to the configuration of the program being compiled.
     ProgramConfig* fConfig = nullptr;
+
+    // The Context holds a reference to our error reporter.
+    ErrorReporter* fErrors;
 };
 
 }  // namespace SkSL

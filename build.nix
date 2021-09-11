@@ -1,4 +1,4 @@
-{ pkgs, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
+{ pkgs, dng_sdk, expat, harfbuzz, freetype, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
 
 with pkgs;
 with lib;
@@ -16,6 +16,7 @@ stdenv.mkDerivation {
 
     ln -s ${dng_sdk} third_party/externals/dng_sdk
     ln -s ${expat} third_party/externals/expat
+    ln -s ${freetype} third_party/externals/freetype
     ln -s ${gzip-hpp} third_party/externals/gzip
     ln -s ${harfbuzz} third_party/externals/harfbuzz
     ln -s ${icu} third_party/externals/icu
@@ -29,7 +30,7 @@ stdenv.mkDerivation {
 
   configurePhase = ''
     runHook preConfigure
-    gn gen out --args='is_debug=false is_component_build=false extra_cflags_cc=["-fexceptions"]'
+    gn gen out --args='is_debug=false is_component_build=false is_official_build=false extra_cflags_cc=["-fexceptions"]'
   '';
 
   dontUseNinjaBuild = true;

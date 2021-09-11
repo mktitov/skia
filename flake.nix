@@ -2,7 +2,7 @@
   description = "Skia flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/staging-21.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
     # Build deps
@@ -35,11 +35,15 @@
       flake = false;
     };
     libwebp = {
-      url = "git+https://chromium.googlesource.com/webm/libwebp.git?rev=fedac6cc69cda3e9e04b780d324cf03921fb3ff4";
+      url = "git+https://chromium.googlesource.com/webm/libwebp.git?rev=9ce5843dbabcfd3f7c39ec7ceba9cbeb213cbfdf";
       flake = false;
     };
     harfbuzz = {
       url = "github:harfbuzz/harfbuzz/368e9578873798e2d17ed78a0474dec7d4e9d6c0";
+      flake = false;
+    };
+    freetype = {
+      url = "git+https://chromium.googlesource.com/chromium/src/third_party/freetype2.git?rev=fed5521016227bf8cc4475f66450a9963568d162";
       flake = false;
     };
     libpng = {
@@ -52,12 +56,12 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
+  outputs = { self, nixpkgs, flake-utils, dng_sdk, expat, harfbuzz, freetype, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
     flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         skottie_tool = import ./build.nix {
-          inherit pkgs dng_sdk expat harfbuzz icu libjpeg-turbo libpng libwebp piex sfntly zlib gzip-hpp;
+          inherit pkgs dng_sdk expat harfbuzz freetype icu libjpeg-turbo libpng libwebp piex sfntly zlib gzip-hpp;
         };
         skottie_tool-app = flake-utils.lib.mkApp { drv = skottie_tool; };
         derivation = { inherit skottie_tool; };

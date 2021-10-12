@@ -82,6 +82,12 @@ public:
     // isinf() is defined, and floating point infinities are handled according to IEEE standards.
     bool infinitySupport() const { return fInfinitySupport; }
 
+    // Returns true if `expr` in `myArray[expr]` can be any integer expression. If false, `expr`
+    // must be a constant-index-expression as defined in the OpenGL ES2 specification, Appendix A.5.
+    bool nonconstantArrayIndexSupport() const {
+        return fNonconstantArrayIndexSupport;
+    }
+
     // frexp(), ldexp(), findMSB(), findLSB().
     bool bitManipulationSupport() const { return fBitManipulationSupport; }
 
@@ -159,6 +165,8 @@ public:
     bool emulateAbsIntFunction() const { return fEmulateAbsIntFunction; }
 
     bool rewriteDoWhileLoops() const { return fRewriteDoWhileLoops; }
+
+    bool rewriteSwitchStatements() const { return fRewriteSwitchStatements; }
 
     bool removePowWithConstantExponent() const { return fRemovePowWithConstantExponent; }
 
@@ -287,6 +295,7 @@ private:
     bool fExternalTextureSupport            : 1;
     bool fVertexIDSupport                   : 1;
     bool fInfinitySupport                   : 1;
+    bool fNonconstantArrayIndexSupport      : 1;
     bool fBitManipulationSupport            : 1;
     bool fFloatIs32Bits                     : 1;
     bool fHalfIs32Bits                      : 1;
@@ -315,6 +324,7 @@ private:
     bool fUnfoldShortCircuitAsTernary                 : 1;
     bool fEmulateAbsIntFunction                       : 1;
     bool fRewriteDoWhileLoops                         : 1;
+    bool fRewriteSwitchStatements                     : 1;
     bool fRemovePowWithConstantExponent               : 1;
     bool fMustWriteToFragColor                        : 1;
     bool fNoDefaultPrecisionForExternalSamplers       : 1;

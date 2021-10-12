@@ -20,14 +20,12 @@
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
-#include "src/sksl/ir/SkSLBoolLiteral.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorMatrixResize.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExtension.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
-#include "src/sksl/ir/SkSLFloatLiteral.h"
 #include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
@@ -36,8 +34,8 @@
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLInlineMarker.h"
-#include "src/sksl/ir/SkSLIntLiteral.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
@@ -55,8 +53,8 @@ namespace SkSL {
  */
 class MetalCodeGenerator : public CodeGenerator {
 public:
-    static constexpr const char* SAMPLER_SUFFIX = "Smplr";
-    static constexpr const char* PACKED_PREFIX = "packed_";
+    inline static constexpr const char* SAMPLER_SUFFIX = "Smplr";
+    inline static constexpr const char* PACKED_PREFIX = "packed_";
 
     MetalCodeGenerator(const Context* context, const Program* program, OutputStream* out)
     : INHERITED(context, program, out)
@@ -69,12 +67,12 @@ protected:
     using Precedence = Operator::Precedence;
 
     typedef int Requirements;
-    static constexpr Requirements kNo_Requirements       = 0;
-    static constexpr Requirements kInputs_Requirement    = 1 << 0;
-    static constexpr Requirements kOutputs_Requirement   = 1 << 1;
-    static constexpr Requirements kUniforms_Requirement  = 1 << 2;
-    static constexpr Requirements kGlobals_Requirement   = 1 << 3;
-    static constexpr Requirements kFragCoord_Requirement = 1 << 4;
+    inline static constexpr Requirements kNo_Requirements       = 0;
+    inline static constexpr Requirements kInputs_Requirement    = 1 << 0;
+    inline static constexpr Requirements kOutputs_Requirement   = 1 << 1;
+    inline static constexpr Requirements kUniforms_Requirement  = 1 << 2;
+    inline static constexpr Requirements kGlobals_Requirement   = 1 << 3;
+    inline static constexpr Requirements kFragCoord_Requirement = 1 << 4;
 
     static const char* OperatorName(Operator op);
 
@@ -99,7 +97,7 @@ protected:
 
     void writeStructDefinitions();
 
-    void writeFields(const std::vector<Type::Field>& fields, int parentOffset,
+    void writeFields(const std::vector<Type::Field>& fields, int parentLine,
                      const InterfaceBlock* parentIntf = nullptr);
 
     int size(const Type* type, bool isPacked) const;
@@ -232,11 +230,7 @@ protected:
 
     void writePostfixExpression(const PostfixExpression& p, Precedence parentPrecedence);
 
-    void writeBoolLiteral(const BoolLiteral& b);
-
-    void writeIntLiteral(const IntLiteral& i);
-
-    void writeFloatLiteral(const FloatLiteral& f);
+    void writeLiteral(const Literal& f);
 
     void writeSetting(const Setting& s);
 

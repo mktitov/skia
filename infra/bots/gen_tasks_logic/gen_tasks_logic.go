@@ -754,8 +754,8 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			log.Fatalf("Entry %q not found in OS mapping.", os)
 		}
 		if os == "Win10" && b.parts["model"] == "Golo" {
-			// ChOps-owned machines have Windows 10 v1709.
-			d["os"] = "Windows-10-16299"
+			// ChOps-owned machines have Windows 10 21h1.
+			d["os"] = "Windows-10-19043"
 		}
 		if os == "Mac10.14" && b.parts["model"] == "VMware7.1" {
 			// ChOps VMs are at a newer version of MacOS.
@@ -783,9 +783,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			// For Android, the device type is a better dimension
 			// than CPU or GPU.
 			deviceInfo, ok := map[string][]string{
-				"AndroidOne": {"sprout", "MOB30Q"},
-				// S6 dimensions are more general than we would like. See skbug.com/11337 for context.
-				"GalaxyS6":        {"universal7420", "NRD90M"},
+				"AndroidOne":      {"sprout", "MOB30Q"},
 				"GalaxyS7_G930FD": {"herolte", "R16NW_G930FXXS2ERH6"}, // This is Oreo.
 				"GalaxyS9":        {"starlte", "QP1A.190711.020"},     // This is Android10.
 				"GalaxyS20":       {"exynos990", "QP1A.190711.020"},
@@ -874,7 +872,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"IntelIris655":  "8086:3ea5-26.20.100.7463",
 					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
-					"QuadroP400":    "10de:1cb3-25.21.14.1678",
+					"QuadroP400":    "10de:1cb3-30.0.14.7168",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -923,15 +921,9 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				}
 			} else if b.os("ChromeOS") {
 				version, ok := map[string]string{
-					"MaliT604":            "10575.22.0",
-					"MaliT764":            "10575.22.0",
-					"MaliT860":            "10575.22.0",
-					"PowerVRGX6250":       "10575.22.0",
-					"TegraK1":             "10575.22.0",
-					"IntelHDGraphics615":  "10575.22.0",
-					"IntelUHDGraphics605": "13729.56.0",
-					"RadeonVega3":         "13729.56.0",
-					"Adreno618":           "13929.0.0",
+					"IntelUHDGraphics605": "14233.0.0",
+					"RadeonVega3":         "14233.0.0",
+					"Adreno618":           "14150.39.0",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in ChromeOS GPU mapping.", b.parts["cpu_or_gpu_value"])

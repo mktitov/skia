@@ -39,11 +39,11 @@
       flake = false;
     };
     harfbuzz = {
-      url = "github:harfbuzz/harfbuzz/368e9578873798e2d17ed78a0474dec7d4e9d6c0";
+      url = "github:harfbuzz/harfbuzz/a52c6df38a38c4e36ff991dfb4b7d92e48a44553";
       flake = false;
     };
     freetype = {
-      url = "git+https://chromium.googlesource.com/chromium/src/third_party/freetype2.git?rev=fed5521016227bf8cc4475f66450a9963568d162";
+      url = "git+https://chromium.googlesource.com/chromium/src/third_party/freetype2.git?rev=12ef831fc314518bff45278008a568608501a8e4";
       flake = false;
     };
     libpng = {

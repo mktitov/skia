@@ -41,6 +41,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fUnfoldShortCircuitAsTernary = false;
     fEmulateAbsIntFunction = false;
     fRewriteDoWhileLoops = false;
+    fRewriteSwitchStatements = false;
     fRemovePowWithConstantExponent = false;
     fMustWriteToFragColor = false;
     fNoDefaultPrecisionForExternalSamplers = false;
@@ -53,6 +54,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fExternalTextureSupport = false;
     fVertexIDSupport = false;
     fInfinitySupport = false;
+    fNonconstantArrayIndexSupport = false;
     fBitManipulationSupport = false;
     fFloatIs32Bits = true;
     fHalfIs32Bits = false;
@@ -124,6 +126,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Unfold short circuit as ternary", fUnfoldShortCircuitAsTernary);
     writer->appendBool("Emulate abs(int) function", fEmulateAbsIntFunction);
     writer->appendBool("Rewrite do while loops", fRewriteDoWhileLoops);
+    writer->appendBool("Rewrite switch statements", fRewriteSwitchStatements);
     writer->appendBool("Rewrite pow with constant exponent", fRemovePowWithConstantExponent);
     writer->appendBool("Must write to sk_FragColor [workaround]", fMustWriteToFragColor);
     writer->appendBool("Don't add default precision statement for samplerExternalOES",
@@ -137,6 +140,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("External texture support", fExternalTextureSupport);
     writer->appendBool("sk_VertexID support", fVertexIDSupport);
     writer->appendBool("Infinity support", fInfinitySupport);
+    writer->appendBool("Non-constant array index support", fNonconstantArrayIndexSupport);
     writer->appendBool("Bit manipulation support", fBitManipulationSupport);
     writer->appendBool("float == fp32", fFloatIs32Bits);
     writer->appendBool("half == fp32", fHalfIs32Bits);
@@ -177,6 +181,7 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fUnfoldShortCircuitAsTernary);
         SkASSERT(!fEmulateAbsIntFunction);
         SkASSERT(!fRewriteDoWhileLoops);
+        SkASSERT(!fRewriteSwitchStatements);
         SkASSERT(!fRemovePowWithConstantExponent);
         SkASSERT(!fMustWriteToFragColor);
         SkASSERT(!fNoDefaultPrecisionForExternalSamplers);

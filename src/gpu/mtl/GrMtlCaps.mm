@@ -45,8 +45,8 @@ GrMtlCaps::GrMtlCaps(const GrContextOptions& contextOptions, const id<MTLDevice>
     // TODO: appears to be slow with Mac msaa8, disabled for now
     fStoreAndMultisampleResolveSupport = (fGPUFamily == GPUFamily::kApple &&
                                           fFamilyGroup >= 3);
-    // TODO: only enable if memoryless attachments available?
-    fPreferDiscardableMSAAAttachment = false;  // still issues with framebuffers w/stencil
+    // Also slow with non-Apple silicon
+    fPreferDiscardableMSAAAttachment = (fGPUFamily == GPUFamily::kApple);
 
     this->finishInitialization(contextOptions);
 }
@@ -514,6 +514,7 @@ void GrMtlCaps::initShaderCaps() {
     shaderCaps->fInverseHyperbolicSupport = true;
     shaderCaps->fVertexIDSupport = true;
     shaderCaps->fInfinitySupport = true;
+    shaderCaps->fNonconstantArrayIndexSupport = true;
 
     // Metal uses IEEE float and half floats so assuming those values here.
     shaderCaps->fFloatIs32Bits = true;

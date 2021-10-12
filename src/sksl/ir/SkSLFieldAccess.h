@@ -27,11 +27,11 @@ class FieldAccess final : public Expression {
 public:
     using OwnerKind = FieldAccessOwnerKind;
 
-    static constexpr Kind kExpressionKind = Kind::kFieldAccess;
+    inline static constexpr Kind kExpressionKind = Kind::kFieldAccess;
 
     FieldAccess(std::unique_ptr<Expression> base, int fieldIndex,
                 OwnerKind ownerKind = OwnerKind::kDefault)
-    : INHERITED(base->fOffset, kExpressionKind, base->type().fields()[fieldIndex].fType)
+    : INHERITED(base->fLine, kExpressionKind, base->type().fields()[fieldIndex].fType)
     , fFieldIndex(fieldIndex)
     , fOwnerKind(ownerKind)
     , fBase(std::move(base)) {}

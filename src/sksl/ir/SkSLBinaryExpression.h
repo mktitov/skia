@@ -26,11 +26,11 @@ namespace SkSL {
  */
 class BinaryExpression final : public Expression {
 public:
-    static constexpr Kind kExpressionKind = Kind::kBinary;
+    inline static constexpr Kind kExpressionKind = Kind::kBinary;
 
-    BinaryExpression(int offset, std::unique_ptr<Expression> left, Operator op,
+    BinaryExpression(int line, std::unique_ptr<Expression> left, Operator op,
                      std::unique_ptr<Expression> right, const Type* type)
-        : INHERITED(offset, kExpressionKind, type)
+        : INHERITED(line, kExpressionKind, type)
         , fLeft(std::move(left))
         , fOperator(op)
         , fRight(std::move(right)) {

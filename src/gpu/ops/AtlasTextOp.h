@@ -12,11 +12,6 @@
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/text/GrTextBlob.h"
 
-#if !defined(SK_BUILD_FOR_IOS) || \
-            (defined(__IPHONE_9_0) && __IPHONE_OS_VERSION_MIN_REQUIRED > __IPHONE_9_0)
-    #define GR_HAS_THREAD_LOCAL
-#endif
-
 class GrRecordingContext;
 
 namespace skgpu::v1 {
@@ -33,13 +28,9 @@ public:
         }
     }
 
-#if defined(GR_HAS_THREAD_LOCAL)
     void* operator new(size_t s);
     void operator delete(void* b) noexcept;
     static void ClearCache();
-#else
-    static void ClearCache() {}
-#endif
 
     static const int kVerticesPerGlyph = GrAtlasSubRun::kVerticesPerGlyph;
     static const int kIndicesPerGlyph = 6;
@@ -114,7 +105,7 @@ public:
 
         kLast = kLCDBGRDistanceField
     };
-    static constexpr int kMaskTypeCount = static_cast<int>(MaskType::kLast) + 1;
+    inline static constexpr int kMaskTypeCount = static_cast<int>(MaskType::kLast) + 1;
 
 #if GR_TEST_UTILS && SK_GPU_V1
     static GrOp::Owner CreateOpTestingOnly(skgpu::v1::SurfaceDrawContext*,

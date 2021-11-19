@@ -13,13 +13,14 @@
 #include "stdlib.h"
 #include "string.h"
 #include "include/private/SkSLDefines.h"
+#include "src/sksl/SkSLGLSL.h"
 #include "src/sksl/SkSLLexer.h"
 
 #ifndef SKSL_STANDALONE
 #include "include/core/SkTypes.h"
-#include "include/private/GrTypesPriv.h"
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrContextOptions.h"
+#include "include/private/GrTypesPriv.h"
 #include "src/gpu/GrShaderCaps.h"
 #endif // SK_SUPPORT_GPU
 #endif // SKSL_STANDALONE
@@ -35,23 +36,10 @@ class Type;
 
 #if defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
 
-// we're being compiled standalone, so we don't have access to caps...
-enum GrGLSLGeneration {
-    k110_GrGLSLGeneration,
-    k130_GrGLSLGeneration,
-    k140_GrGLSLGeneration,
-    k150_GrGLSLGeneration,
-    k330_GrGLSLGeneration,
-    k400_GrGLSLGeneration,
-    k420_GrGLSLGeneration,
-    k310es_GrGLSLGeneration,
-    k320es_GrGLSLGeneration,
-};
-
 class StandaloneShaderCaps {
 public:
-    GrGLSLGeneration fGLSLGeneration = k400_GrGLSLGeneration;
-    GrGLSLGeneration generation() const {
+    SkSL::GLSLGeneration fGLSLGeneration = SkSL::GLSLGeneration::k400;
+    SkSL::GLSLGeneration generation() const {
         return fGLSLGeneration;
     }
 
@@ -86,7 +74,7 @@ public:
     }
 
     bool mustDeclareFragmentShaderOutput() const {
-        return fGLSLGeneration > k110_GrGLSLGeneration;
+        return fGLSLGeneration > SkSL::GLSLGeneration::k110;
     }
 
     bool fFBFetchSupport = false;
@@ -132,11 +120,6 @@ public:
     bool fMustGuardDivisionEvenAfterExplicitZeroCheck = false;
     bool mustGuardDivisionEvenAfterExplicitZeroCheck() const {
         return fMustGuardDivisionEvenAfterExplicitZeroCheck;
-    }
-
-    bool fInBlendModesFailRandomlyForAllZeroVec = false;
-    bool inBlendModesFailRandomlyForAllZeroVec() const {
-        return fInBlendModesFailRandomlyForAllZeroVec;
     }
 
     bool fMustEnableAdvBlendEqs = false;
@@ -284,13 +267,12 @@ public:
 };
 
 using ShaderCapsClass = StandaloneShaderCaps;
-using ShaderCapsPointer = std::shared_ptr<StandaloneShaderCaps>;
-extern StandaloneShaderCaps standaloneCaps;
+using ShaderCapsPointer = std::unique_ptr<StandaloneShaderCaps>;
 
 #else
 
 using ShaderCapsClass = GrShaderCaps;
-using ShaderCapsPointer = sk_sp<GrShaderCaps>;
+using ShaderCapsPointer = std::unique_ptr<GrShaderCaps>;
 
 #endif  // defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
 
@@ -314,12 +296,6 @@ public:
         ShaderCapsPointer result = MakeShaderCaps();
         result->fVersionDeclString = "#version 400";
         result->fAddAndTrueToLoopCondition = true;
-        return result;
-    }
-
-    static ShaderCapsPointer BlendModesFailRandomlyForAllZeroVec() {
-        ShaderCapsPointer result = MakeShaderCaps();
-        result->fInBlendModesFailRandomlyForAllZeroVec = true;
         return result;
     }
 
@@ -453,7 +429,7 @@ public:
     static ShaderCapsPointer Version110() {
         ShaderCapsPointer result = MakeShaderCaps();
         result->fVersionDeclString = "#version 110";
-        result->fGLSLGeneration = GrGLSLGeneration::k110_GrGLSLGeneration;
+        result->fGLSLGeneration = SkSL::GLSLGeneration::k110;
         return result;
     }
 
@@ -467,7 +443,7 @@ private:
     static ShaderCapsPointer MakeShaderCaps();
 };
 
-#if !defined(SKSL_STANDALONE)
+#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
 bool type_to_grsltype(const Context& context, const Type& type, GrSLType* outType);
 #endif
 

@@ -16,14 +16,21 @@ namespace skgpu::mtl {
 
 Texture::Texture(SkISize dimensions,
                  const skgpu::TextureInfo& info,
-                 sk_cfp<id<MTLTexture>> texture)
-        : skgpu::Texture(dimensions, info)
+                 sk_cfp<id<MTLTexture>> texture,
+                 Ownership ownership)
+        : skgpu::Texture(dimensions, info, ownership)
         , fTexture(std::move(texture)) {}
 
 sk_sp<Texture> Texture::Make(const Gpu* gpu,
                              SkISize dimensions,
                              const skgpu::TextureInfo& info) {
+    // TODO: get this from Caps
+    if (dimensions.width() > 16384 || dimensions.height() > 16384) {
+        return nullptr;
+    }
+
     const TextureSpec& mtlSpec = info.mtlTextureSpec();
+    SkASSERT(!mtlSpec.fFramebufferOnly);
 
     sk_cfp<MTLTextureDescriptor*> desc([[MTLTextureDescriptor alloc] init]);
     (*desc).textureType = (info.numSamples() > 1) ? MTLTextureType2DMultisample : MTLTextureType2D;
@@ -63,7 +70,13 @@ sk_sp<Texture> Texture::Make(const Gpu* gpu,
     }
 #endif
 
-    return sk_sp<Texture>(new Texture(dimensions, info, std::move(texture)));
+    return sk_sp<Texture>(new Texture(dimensions, info, std::move(texture), Ownership::kOwned));
+}
+
+sk_sp<Texture> Texture::MakeWrapped(SkISize dimensions,
+                                    const skgpu::TextureInfo& info,
+                                    sk_cfp<id<MTLTexture>> texture) {
+    return sk_sp<Texture>(new Texture(dimensions, info, std::move(texture), Ownership::kWrapped));
 }
 
 } // namespace skgpu::mtl

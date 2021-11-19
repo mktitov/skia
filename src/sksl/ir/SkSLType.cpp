@@ -9,15 +9,14 @@
 
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorArrayCast.h"
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
-#include "src/sksl/ir/SkSLExternalFunctionReference.h"
-#include "src/sksl/ir/SkSLFunctionReference.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLTypeReference.h"
 
 namespace SkSL {
 
@@ -59,6 +58,11 @@ public:
 
     bool isAllowedInES2() const override {
         return fComponentType.isAllowedInES2();
+    }
+
+    size_t slotCount() const override {
+        SkASSERT(fCount > 0);
+        return fCount * fComponentType.slotCount();
     }
 
 private:
@@ -127,6 +131,10 @@ public:
         return true;
     }
 
+    size_t slotCount() const override {
+        return 1;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -174,6 +182,10 @@ public:
         return fNumberKind != NumberKind::kUnsigned;
     }
 
+    size_t slotCount() const override {
+        return 1;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -218,6 +230,10 @@ public:
 
     bool isAllowedInES2() const override {
         return fColumns == fRows;
+    }
+
+    size_t slotCount() const override {
+        return fColumns * fRows;
     }
 
 private:
@@ -337,6 +353,14 @@ public:
         });
     }
 
+    size_t slotCount() const override {
+        size_t slots = 0;
+        for (const Field& field : fFields) {
+            slots += field.fType->slotCount();
+        }
+        return slots;
+    }
+
 private:
     using INHERITED = Type;
 
@@ -377,6 +401,10 @@ public:
 
     bool isAllowedInES2() const override {
         return fComponentType.isAllowedInES2();
+    }
+
+    size_t slotCount() const override {
+        return fColumns;
     }
 
 private:
@@ -717,22 +745,14 @@ const Type* Type::clone(SymbolTable* symbolTable) const {
 
 std::unique_ptr<Expression> Type::coerceExpression(std::unique_ptr<Expression> expr,
                                                    const Context& context) const {
-    if (!expr) {
-        return nullptr;
-    }
-    const int line = expr->fLine;
-    if (expr->is<FunctionReference>() || expr->is<ExternalFunctionReference>()) {
-        context.fErrors->error(line, "expected '(' to begin function call");
-        return nullptr;
-    }
-    if (expr->is<TypeReference>()) {
-        context.fErrors->error(line, "expected '(' to begin constructor invocation");
+    if (!expr || expr->isIncomplete(context)) {
         return nullptr;
     }
     if (expr->type() == *this) {
         return expr;
     }
 
+    const int line = expr->fLine;
     const Program::Settings& settings = context.fConfig->fSettings;
     if (!expr->coercionCost(*this).isPossible(settings.fAllowNarrowingConversions)) {
         context.fErrors->error(line, "expected '" + this->displayName() + "', but found '" +
@@ -796,21 +816,14 @@ bool Type::checkForOutOfRangeLiteral(const Context& context, const Expression& e
     if (baseType.isInteger()) {
         // Replace constant expressions with their corresponding values.
         const Expression* valueExpr = ConstantFolder::GetConstantValueForVariable(expr);
-        if (valueExpr->allowsConstantSubexpressions()) {
+        if (valueExpr->supportsConstantValues()) {
             // Iterate over every constant subexpression in the value.
             int numSlots = valueExpr->type().slotCount();
             for (int slot = 0; slot < numSlots; ++slot) {
-                const Expression* subexpr = valueExpr->getConstantSubexpression(slot);
-                if (!subexpr || !subexpr->isIntLiteral()) {
-                    continue;
-                }
-                // Look for an int Literal value that is out of range for the corresponding type.
-                SKSL_INT value = subexpr->as<Literal>().intValue();
-                if (value < baseType.minimumValue() || value > baseType.maximumValue()) {
-                    // We found a value that can't fit in the type. Flag it as an error.
-                    context.fErrors->error(expr.fLine,
-                                           String("integer is out of range for type '") +
-                                           this->displayName().c_str() + "': " + to_string(value));
+                skstd::optional<double> slotVal = valueExpr->getConstantValue(slot);
+                // Check for Literal values that are out of range for the base type.
+                if (slotVal.has_value() &&
+                    baseType.checkForOutOfRangeLiteral(context, *slotVal, valueExpr->fLine)) {
                     foundError = true;
                 }
             }
@@ -819,6 +832,20 @@ bool Type::checkForOutOfRangeLiteral(const Context& context, const Expression& e
 
     // We don't need range checks for floats or booleans; any matched-type value is acceptable.
     return foundError;
+}
+
+bool Type::checkForOutOfRangeLiteral(const Context& context, double value, int line) const {
+    SkASSERT(this->isScalar());
+    if (this->isInteger()) {
+        if (value < this->minimumValue() || value > this->maximumValue()) {
+            // We found a value that can't fit in the type. Flag it as an error.
+            context.fErrors->error(line, String("integer is out of range for type '") +
+                                         this->displayName().c_str() +
+                                         "': " + to_string((SKSL_INT)value));
+            return true;
+        }
+    }
+    return false;
 }
 
 SKSL_INT Type::convertArraySize(const Context& context, std::unique_ptr<Expression> size) const {
@@ -839,11 +866,11 @@ SKSL_INT Type::convertArraySize(const Context& context, std::unique_ptr<Expressi
                                             "' may not be used in an array");
         return 0;
     }
-    if (!size->isIntLiteral()) {
+    SKSL_INT count;
+    if (!ConstantFolder::GetConstantInt(*size, &count)) {
         context.fErrors->error(size->fLine, "array size must be an integer");
         return 0;
     }
-    SKSL_INT count = size->as<Literal>().intValue();
     if (count <= 0) {
         context.fErrors->error(size->fLine, "array size must be positive");
         return 0;

@@ -204,7 +204,6 @@ public:
         return this->name().starts_with("$");
     }
 
-
     bool operator==(const Type& other) const {
         return this->name() == other.name();
     }
@@ -291,18 +290,16 @@ public:
 
     /**
      * Returns true if this is an "opaque type" (an external object which the shader references in
-     * some fashion), or void. https://www.khronos.org/opengl/wiki/Data_Type_(GLSL)#Opaque_types
+     * some fashion). https://www.khronos.org/opengl/wiki/Data_Type_(GLSL)#Opaque_types
      */
     bool isOpaque() const {
         switch (fTypeKind) {
             case TypeKind::kBlender:
             case TypeKind::kColorFilter:
-            case TypeKind::kOther:
             case TypeKind::kSampler:
             case TypeKind::kSeparateSampler:
             case TypeKind::kShader:
             case TypeKind::kTexture:
-            case TypeKind::kVoid:
                 return true;
             default:
                 return false;
@@ -388,41 +385,8 @@ public:
     /**
      * Returns the number of scalars needed to hold this type.
      */
-    size_t slotCount() const {
-        switch (this->typeKind()) {
-            case Type::TypeKind::kBlender:
-            case Type::TypeKind::kColorFilter:
-            case Type::TypeKind::kGeneric:
-            case Type::TypeKind::kOther:
-            case Type::TypeKind::kSampler:
-            case Type::TypeKind::kSeparateSampler:
-            case Type::TypeKind::kShader:
-            case Type::TypeKind::kTexture:
-            case Type::TypeKind::kVoid:
-                return 0;
-
-            case Type::TypeKind::kLiteral:
-            case Type::TypeKind::kScalar:
-                return 1;
-
-            case Type::TypeKind::kVector:
-                return this->columns();
-
-            case Type::TypeKind::kMatrix:
-                return this->columns() * this->rows();
-
-            case Type::TypeKind::kStruct: {
-                size_t slots = 0;
-                for (const Field& field : this->fields()) {
-                    slots += field.fType->slotCount();
-                }
-                return slots;
-            }
-            case Type::TypeKind::kArray:
-                SkASSERT(this->columns() > 0);
-                return this->columns() * this->componentType().slotCount();
-        }
-        SkUNREACHABLE;
+    virtual size_t slotCount() const {
+        return 0;
     }
 
     virtual const std::vector<Field>& fields() const {
@@ -545,6 +509,9 @@ public:
 
     /** Detects any IntLiterals in the expression which can't fit in this type. */
     bool checkForOutOfRangeLiteral(const Context& context, const Expression& expr) const;
+
+    /** Checks if `value` can fit in this type. The type must be scalar. */
+    bool checkForOutOfRangeLiteral(const Context& context, double value, int line) const;
 
     /**
      * Verifies that the expression is a valid constant array size for this type. Returns the array

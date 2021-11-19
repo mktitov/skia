@@ -23,13 +23,13 @@
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkMarkerStack.h"
 #include "src/core/SkMatrixPriv.h"
+#include "src/core/SkOpts.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkTLazy.h"
 #include "src/core/SkTextBlobPriv.h"
-#include "src/core/SkUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 #include "src/utils/SkPatchUtils.h"
@@ -159,12 +159,13 @@ void SkBaseDevice::drawDRRect(const SkRRect& outer,
 }
 
 void SkBaseDevice::drawPatch(const SkPoint cubics[12], const SkColor colors[4],
-                             const SkPoint texCoords[4], SkBlendMode bmode, const SkPaint& paint) {
+                             const SkPoint texCoords[4], sk_sp<SkBlender> blender,
+                             const SkPaint& paint) {
     SkISize lod = SkPatchUtils::GetLevelOfDetail(cubics, &this->localToDevice());
     auto vertices = SkPatchUtils::MakeVertices(cubics, colors, texCoords, lod.width(), lod.height(),
                                                this->imageInfo().colorSpace());
     if (vertices) {
-        this->drawVertices(vertices.get(), bmode, paint);
+        this->drawVertices(vertices.get(), std::move(blender), paint);
     }
 }
 
@@ -208,9 +209,11 @@ static SkPoint* quad_to_tris(SkPoint tris[6], const SkPoint quad[4]) {
     return tris + 6;
 }
 
-void SkBaseDevice::drawAtlas(const SkImage* atlas, const SkRSXform xform[],
-                             const SkRect tex[], const SkColor colors[], int quadCount,
-                             SkBlendMode mode, const SkSamplingOptions& sampling,
+void SkBaseDevice::drawAtlas(const SkRSXform xform[],
+                             const SkRect tex[],
+                             const SkColor colors[],
+                             int quadCount,
+                             sk_sp<SkBlender> blender,
                              const SkPaint& paint) {
     const int triCount = quadCount << 1;
     const int vertexCount = triCount * 3;
@@ -236,11 +239,8 @@ void SkBaseDevice::drawAtlas(const SkImage* atlas, const SkRSXform xform[],
             vCol += 6;
         }
     }
-    SkPaint p(paint);
-    p.setShader(atlas->makeShader(sampling));
-    this->drawVertices(builder.detach().get(), mode, p);
+    this->drawVertices(builder.detach().get(), std::move(blender), paint);
 }
-
 
 void SkBaseDevice::drawEdgeAAQuad(const SkRect& r, const SkPoint clip[4], SkCanvas::QuadAAFlags aa,
                                   const SkColor4f& color, SkBlendMode mode) {

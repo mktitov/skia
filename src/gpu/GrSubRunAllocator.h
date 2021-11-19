@@ -8,6 +8,7 @@
 #ifndef GrSubRunAllocator_DEFINED
 #define GrSubRunAllocator_DEFINED
 
+#include "include/core/SkMath.h"
 #include "include/core/SkSpan.h"
 #include "src/core/SkArenaAlloc.h"
 
@@ -33,8 +34,6 @@ public:
         SkASSERT_RELEASE(0 <= requestedSize && requestedSize < kMaxByteSize);
         SkASSERT_RELEASE(SkIsPow2(assumedAlignment) && SkIsPow2(maxAlignment));
 
-        auto alignUp = [](int size, int alignment) {return (size + (alignment - 1)) & -alignment;};
-
         const int minAlignment = std::min(maxAlignment, assumedAlignment);
         // There are two cases, one easy and one subtle. The easy case is when minAlignment ==
         // maxAlignment. When that happens, the term maxAlignment - minAlignment is zero, and the
@@ -54,7 +53,7 @@ public:
         // Following this logic, the equation for the additional bytes is
         //   (maxAlignment/minAlignment - 1) * minAlignment
         //     = maxAlignment - minAlignment.
-        int minimumSize = alignUp(requestedSize, minAlignment)
+        int minimumSize = AlignUp(requestedSize, minAlignment)
                           + blockSize
                           + maxAlignment - minAlignment;
 
@@ -62,7 +61,7 @@ public:
         // maximum int. The > 32K heuristic is from the JEMalloc behavior.
         constexpr int k32K = (1 << 15);
         if (minimumSize >= k32K && minimumSize < std::numeric_limits<int>::max() - k4K) {
-            minimumSize = alignUp(minimumSize, k4K);
+            minimumSize = AlignUp(minimumSize, k4K);
         }
 
         return minimumSize;
@@ -102,6 +101,10 @@ private:
     #else
         inline static constexpr int kAllocationAlignment = 8;
     #endif
+
+    static constexpr size_t AlignUp(int size, int alignment) {
+        return (size + (alignment - 1)) & -alignment;
+    }
 
     // The Block starts at the location pointed to by fEndByte.
     // Beware. Order is important here. The destructor for fPrevious must be called first because

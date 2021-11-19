@@ -49,8 +49,8 @@ namespace SkVMInterpreterTypes {
 
     inline void interpret_skvm(const skvm::InterpreterInstruction insts[], const int ninsts,
                                const int nregs, const int loop,
-                               const int strides[], const int nargs,
-                               int n, void* args[]) {
+                               const int strides[], skvm::TraceHook* traceHook,
+                               const int nargs, int n, void* args[]) {
         using namespace skvm;
 
         using SkVMInterpreterTypes::K;
@@ -216,6 +216,29 @@ namespace SkVMInterpreterTypes {
                         }
                     #endif
                     break;
+
+                    CASE(Op::trace_line):
+                        if (traceHook && any(r[x].i32)) {
+                            traceHook->line(immA);
+                        }
+                        break;
+
+                    CASE(Op::trace_var):
+                        if (traceHook && any(r[x].i32)) {
+                            for (int i = 0; i < K; ++i) {
+                                if (r[x].i32[i]) {
+                                    traceHook->var(immA, r[y].i32[i]);
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+
+                    CASE(Op::trace_call):
+                        if (traceHook && any(r[x].i32)) {
+                            traceHook->call(immA, (bool)immB);
+                        }
+                        break;
 
                     CASE(Op::index): {
                         const int iota[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,

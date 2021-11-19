@@ -9,8 +9,6 @@
 #define GrShaderCaps_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/GrTypesPriv.h"
-#include "src/gpu/GrSwizzle.h"
 #include "src/gpu/glsl/GrGLSL.h"
 
 namespace SkSL {
@@ -21,7 +19,7 @@ class SharedCompiler;
 struct GrContextOptions;
 class SkJSONWriter;
 
-class GrShaderCaps : public SkRefCnt {
+class GrShaderCaps {
 public:
     /**
      * Indicates how GLSL must interact with advanced blend equations. The KHR extension requires
@@ -35,7 +33,7 @@ public:
         kLast_AdvBlendEqInteraction = kGeneralEnable_AdvBlendEqInteraction
     };
 
-    GrShaderCaps(const GrContextOptions&);
+    GrShaderCaps();
 
     void dumpJSON(SkJSONWriter*) const;
 
@@ -106,7 +104,7 @@ public:
      */
     bool supportsSkSLES3() const {
         return fShaderDerivativeSupport && fNonsquareMatrixSupport && fIntegerSupport &&
-               fGLSLGeneration >= k330_GrGLSLGeneration;
+               fGLSLGeneration >= SkSL::GLSLGeneration::k330;
     }
 
     // SkSL only.
@@ -120,7 +118,9 @@ public:
         return fAdvBlendEqInteraction >= kGeneralEnable_AdvBlendEqInteraction;
     }
 
-    bool mustDeclareFragmentShaderOutput() const { return fGLSLGeneration > k110_GrGLSLGeneration; }
+    bool mustDeclareFragmentShaderOutput() const {
+        return fGLSLGeneration > SkSL::GLSLGeneration::k110;
+    }
 
     bool usesPrecisionModifiers() const { return fUsesPrecisionModifiers; }
 
@@ -178,13 +178,6 @@ public:
     // constructs. See detailed comments in GrGLCaps.cpp.
     bool mustGuardDivisionEvenAfterExplicitZeroCheck() const {
         return fMustGuardDivisionEvenAfterExplicitZeroCheck;
-    }
-
-    // On Pixel 3, 3a, and 4 devices we've noticed that the simple function:
-    // half4 blend(half4 a, half4 b) { return a.a * b; }
-    // may return (0, 0, 0, 1) when b is (0, 0, 0, 0).
-    bool inBlendModesFailRandomlyForAllZeroVec() const {
-        return fInBlendModesFailRandomlyForAllZeroVec;
     }
 
     // On Nexus 6, the GL context can get lost if a shader does not write a value to gl_FragColor.
@@ -272,12 +265,12 @@ public:
 
     bool tessellationSupport() const { return SkToBool(fMaxTessellationSegments);}
 
-    GrGLSLGeneration generation() const { return fGLSLGeneration; }
+    SkSL::GLSLGeneration generation() const { return fGLSLGeneration; }
 
 private:
     void applyOptionsOverrides(const GrContextOptions& options);
 
-    GrGLSLGeneration fGLSLGeneration;
+    SkSL::GLSLGeneration fGLSLGeneration;
 
     bool fShaderDerivativeSupport           : 1;
     bool fDstReadInShaderSupport            : 1;
@@ -317,7 +310,6 @@ private:
     bool fRequiresLocalOutputColorForFBFetch          : 1;
     bool fMustObfuscateUniformColor                   : 1;
     bool fMustGuardDivisionEvenAfterExplicitZeroCheck : 1;
-    bool fInBlendModesFailRandomlyForAllZeroVec       : 1;
     bool fCanUseFragCoord                             : 1;
     bool fIncompleteShortIntPrecision                 : 1;
     bool fAddAndTrueToLoopCondition                   : 1;

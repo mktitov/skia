@@ -88,27 +88,23 @@ bool init_vertices_paint(GrRecordingContext* rContext,
                          const GrColorInfo& colorInfo,
                          const SkPaint& skPaint,
                          const SkMatrixProvider& matrixProvider,
-                         SkBlendMode bmode,
+                         sk_sp<SkBlender> blender,
                          bool hasColors,
                          GrPaint* grPaint) {
-    if (skPaint.getShader()) {
-        if (hasColors) {
-            // When there are colors and a shader, the shader and colors are combined using bmode.
-            return SkPaintToGrPaintWithBlend(rContext, colorInfo, skPaint, matrixProvider, bmode,
-                                             grPaint);
-        } else {
-            // We have a shader, but no colors to blend it against.
-            return SkPaintToGrPaint(rContext, colorInfo, skPaint, matrixProvider, grPaint);
+    if (hasColors) {
+        // When there are colors and a shader, the shader and colors are combined using bmode.
+        // With no shader, we just use the colors (kDst).
+        if (!skPaint.getShader()) {
+            blender = SkBlender::Mode(SkBlendMode::kDst);
         }
+        return SkPaintToGrPaintWithBlend(rContext,
+                                         colorInfo,
+                                         skPaint,
+                                         matrixProvider,
+                                         blender.get(),
+                                         grPaint);
     } else {
-        if (hasColors) {
-            // We have colors, but no shader.
-            return SkPaintToGrPaintWithPrimitiveColor(rContext, colorInfo, skPaint, matrixProvider,
-                                                      grPaint);
-        } else {
-            // No colors and no shader. Just draw with the paint color.
-            return SkPaintToGrPaintNoShader(rContext, colorInfo, skPaint, matrixProvider, grPaint);
-        }
+        return SkPaintToGrPaint(rContext, colorInfo, skPaint, matrixProvider, grPaint);
     }
 }
 
@@ -816,24 +812,30 @@ void Device::drawImageLattice(const SkImage* image,
     }
 }
 
-void Device::drawVertices(const SkVertices* vertices, SkBlendMode mode, const SkPaint& paint) {
+void Device::drawVertices(const SkVertices* vertices,
+                          sk_sp<SkBlender> blender,
+                          const SkPaint& paint) {
     ASSERT_SINGLE_OWNER
     GR_CREATE_TRACE_MARKER_CONTEXT("skgpu::v1::Device", "drawVertices", fContext.get());
     SkASSERT(vertices);
 
     SkVerticesPriv info(vertices->priv());
 
-    const SkRuntimeEffect* effect =
-            paint.getShader() ? as_SB(paint.getShader())->asRuntimeEffect() : nullptr;
-
     GrPaint grPaint;
-    if (!init_vertices_paint(fContext.get(), fSurfaceDrawContext->colorInfo(), paint,
-                             this->asMatrixProvider(), mode, info.hasColors(), &grPaint)) {
+    if (!init_vertices_paint(fContext.get(),
+                             fSurfaceDrawContext->colorInfo(),
+                             paint,
+                             this->asMatrixProvider(),
+                             std::move(blender),
+                             info.hasColors(),
+                             &grPaint)) {
         return;
     }
-    fSurfaceDrawContext->drawVertices(this->clip(), std::move(grPaint), this->asMatrixProvider(),
-                                      sk_ref_sp(const_cast<SkVertices*>(vertices)), nullptr,
-                                      effect);
+    fSurfaceDrawContext->drawVertices(this->clip(),
+                                      std::move(grPaint),
+                                      this->asMatrixProvider(),
+                                      sk_ref_sp(const_cast<SkVertices*>(vertices)),
+                                      nullptr);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -856,38 +858,28 @@ void Device::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void Device::drawAtlas(const SkImage* atlas, const SkRSXform xform[],
-                       const SkRect texRect[], const SkColor colors[], int count,
-                       SkBlendMode mode, const SkSamplingOptions& sampling,
+void Device::drawAtlas(const SkRSXform xform[],
+                       const SkRect texRect[],
+                       const SkColor colors[],
+                       int count,
+                       sk_sp<SkBlender> blender,
                        const SkPaint& paint) {
     ASSERT_SINGLE_OWNER
     GR_CREATE_TRACE_MARKER_CONTEXT("skgpu::v1::Device", "drawAtlas", fContext.get());
 
-    // Convert atlas to an image shader.
-    sk_sp<SkShader> shader = atlas->makeShader(sampling);
-    if (!shader) {
-        return;
-    }
-
-    // Create a fragment processor for atlas image.
-    GrFPArgs fpArgs(fContext.get(), this->asMatrixProvider(), &fSurfaceDrawContext->colorInfo());
-
-    std::unique_ptr<GrFragmentProcessor> shaderFP = as_SB(shader)->asFragmentProcessor(fpArgs);
-    if (shaderFP == nullptr) {
-        return;
-    }
-
     GrPaint grPaint;
     if (colors) {
-        if (!SkPaintToGrPaintWithBlendReplaceShader(
-                    this->recordingContext(), fSurfaceDrawContext->colorInfo(), paint,
-                    this->asMatrixProvider(), std::move(shaderFP), mode, &grPaint)) {
+        if (!SkPaintToGrPaintWithBlend(this->recordingContext(),
+                                       fSurfaceDrawContext->colorInfo(),
+                                       paint,
+                                       this->asMatrixProvider(),
+                                       blender.get(),
+                                       &grPaint)) {
             return;
         }
     } else {
-        if (!SkPaintToGrPaintReplaceShader(
-                    this->recordingContext(), fSurfaceDrawContext->colorInfo(), paint,
-                    this->asMatrixProvider(), std::move(shaderFP), &grPaint)) {
+        if (!SkPaintToGrPaint(this->recordingContext(), fSurfaceDrawContext->colorInfo(),
+                              paint, this->asMatrixProvider(), &grPaint)) {
             return;
         }
     }

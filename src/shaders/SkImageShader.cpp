@@ -7,6 +7,7 @@
 
 #include "src/shaders/SkImageShader.h"
 
+#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
@@ -298,15 +299,9 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
                                        kPremul_SkAlphaType);
     if (fImage->isAlphaOnly()) {
         return GrBlendFragmentProcessor::Make(std::move(fp), nullptr, SkBlendMode::kDstIn);
-    } else if (args.fInputColorIsOpaque) {
-        // If the input alpha is known to be 1, we don't need to take the kSrcIn path. This is
-        // just an optimization. However, we can't just return 'fp' here. We need to actually
-        // inhibit the coverage-as-alpha optimization, or we'll fail to incorporate AA correctly.
-        // The OverrideInput FP happens to do that, so wrap our fp in one of those. The texture FP
-        // doesn't actually use the input color at all, so the overridden input is irrelevant.
-        return GrFragmentProcessor::OverrideInput(std::move(fp), SK_PMColor4fWHITE, false);
+    } else {
+        return fp;
     }
-    return GrBlendFragmentProcessor::Make(std::move(fp), nullptr, SkBlendMode::kSrcIn);
 }
 
 #endif
@@ -323,7 +318,7 @@ sk_sp<SkShader> SkMakeBitmapShaderForPaint(const SkPaint& paint, const SkBitmap&
     if (!s) {
         return nullptr;
     }
-    if (src.colorType() == kAlpha_8_SkColorType && paint.getShader()) {
+    if (SkColorTypeIsAlphaOnly(src.colorType()) && paint.getShader()) {
         // Compose the image shader with the paint's shader. Alpha images+shaders should output the
         // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
         // the source image and dst shader (MakeBlend takes dst first, src second).
@@ -523,8 +518,8 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
         SkColorSpace* cs = pm.colorSpace();
         SkAlphaType   at = pm.alphaType();
 
-        // Color for A8 images comes from the paint.  TODO: all alpha images?  none?
-        if (pm.colorType() == kAlpha_8_SkColorType) {
+        // Color for alpha-only images comes from the paint.
+        if (SkColorTypeIsAlphaOnly(pm.colorType())) {
             SkColor4f rgb = rec.fPaint.getColor4f();
             p->append_set_rgb(alloc, rgb);
 

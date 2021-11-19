@@ -9,12 +9,11 @@
 #include "src/gpu/GrShaderCaps.h"
 
 #include "include/gpu/GrContextOptions.h"
-#include "src/utils/SkJSONWriter.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
-    fGLSLGeneration = k330_GrGLSLGeneration;
+GrShaderCaps::GrShaderCaps() {
+    fGLSLGeneration = SkSL::GLSLGeneration::k330;
     fShaderDerivativeSupport = false;
     fDstReadInShaderSupport = false;
     fDualSourceBlendingSupport = false;
@@ -34,7 +33,6 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fRequiresLocalOutputColorForFBFetch = false;
     fMustObfuscateUniformColor = false;
     fMustGuardDivisionEvenAfterExplicitZeroCheck = false;
-    fInBlendModesFailRandomlyForAllZeroVec = false;
     fCanUseFragCoord = true;
     fIncompleteShortIntPrecision = false;
     fAddAndTrueToLoopCondition = false;
@@ -84,6 +82,8 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
 }
 
 #ifdef SK_ENABLE_DUMP_GPU
+#include "src/utils/SkJSONWriter.h"
+
 void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->beginObject();
 
@@ -117,9 +117,6 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Must obfuscate uniform color", fMustObfuscateUniformColor);
     writer->appendBool("Must guard division even after explicit zero check",
                        fMustGuardDivisionEvenAfterExplicitZeroCheck);
-    writer->appendBool(
-            "src-in and dst-in blend modes may return (0,0,0,1) when dst/src is all zeros",
-            fInBlendModesFailRandomlyForAllZeroVec);
     writer->appendBool("Can use gl_FragCoord", fCanUseFragCoord);
     writer->appendBool("Incomplete short int precision", fIncompleteShortIntPrecision);
     writer->appendBool("Add and true to loops workaround", fAddAndTrueToLoopCondition);
@@ -174,7 +171,6 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fRequiresLocalOutputColorForFBFetch);
         SkASSERT(!fMustObfuscateUniformColor);
         SkASSERT(!fMustGuardDivisionEvenAfterExplicitZeroCheck);
-        SkASSERT(!fInBlendModesFailRandomlyForAllZeroVec);
         SkASSERT(fCanUseFragCoord);
         SkASSERT(!fIncompleteShortIntPrecision);
         SkASSERT(!fAddAndTrueToLoopCondition);

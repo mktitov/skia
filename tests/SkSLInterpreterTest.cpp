@@ -8,6 +8,7 @@
 #include "include/core/SkM44.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/codegen/SkSLVMCodeGenerator.h"
+#include "src/sksl/codegen/SkVMDebugInfo.h"
 #include "src/sksl/ir/SkSLExternalFunction.h"
 #include "src/utils/SkJSON.h"
 
@@ -15,7 +16,7 @@
 
 struct ProgramBuilder {
     ProgramBuilder(skiatest::Reporter* r, const char* src)
-            : fCaps(GrContextOptions{}), fCompiler(&fCaps) {
+            : fCompiler(&fCaps) {
         SkSL::Program::Settings settings;
         // The SkSL inliner is well tested in other contexts. Here, we disable inlining entirely,
         // to stress-test the VM generator's handling of function calls with varying signatures.
@@ -88,7 +89,7 @@ void test(skiatest::Reporter* r, const char* src, float* in, const float* expect
 
     skvm::Builder b;
     SkSL::SkVMSignature sig;
-    SkSL::ProgramToSkVM(*program, *main, &b, /*uniforms=*/{}, &sig);
+    SkSL::ProgramToSkVM(*program, *main, &b, /*debugInfo=*/nullptr, /*uniforms=*/{}, &sig);
     skvm::Program p = b.done();
 
     REPORTER_ASSERT(r, p.nargs() == (int)(sig.fParameterSlots + sig.fReturnSlots));
@@ -118,7 +119,7 @@ void test(skiatest::Reporter* r, const char* src,
     REPORTER_ASSERT(r, main);
 
     skvm::Builder b;
-    SkSL::ProgramToSkVM(*program, *main, &b, /*uniforms=*/{});
+    SkSL::ProgramToSkVM(*program, *main, &b, /*debugInfo=*/nullptr, /*uniforms=*/{});
     skvm::Program p = b.done();
 
     // TODO: Test with and without JIT?
@@ -532,7 +533,7 @@ DEF_TEST(SkSLInterpreterCompound, r) {
         for (int i = 0; i < 16; ++i) {
             uniforms[i] = b.uniform32(uniformPtr, i * sizeof(int)).id;
         }
-        SkSL::ProgramToSkVM(*program, *fn, &b, SkMakeSpan(uniforms));
+        SkSL::ProgramToSkVM(*program, *fn, &b, /*debugInfo=*/nullptr, SkMakeSpan(uniforms));
         return b.done();
     };
 
@@ -623,7 +624,7 @@ DEF_TEST(SkSLInterpreterCompound, r) {
 }
 
 static void expect_failure(skiatest::Reporter* r, const char* src) {
-    GrShaderCaps caps(GrContextOptions{});
+    GrShaderCaps caps;
     SkSL::Compiler compiler(&caps);
     SkSL::Program::Settings settings;
     auto program = compiler.convertProgram(SkSL::ProgramKind::kGeneric,
@@ -651,7 +652,7 @@ DEF_TEST(SkSLInterpreterReturnThenCall, r) {
     REPORTER_ASSERT(r, main);
 
     skvm::Builder b;
-    SkSL::ProgramToSkVM(*program, *main, &b, /*uniforms=*/{});
+    SkSL::ProgramToSkVM(*program, *main, &b, /*debugInfo=*/nullptr, /*uniforms=*/{});
     skvm::Program p = b.done();
 
     float xs[] = { -2.0f, 0.0f, 3.0f, -1.0f };
@@ -673,7 +674,7 @@ DEF_TEST(SkSLInterpreterEarlyReturn, r) {
     REPORTER_ASSERT(r, main);
 
     skvm::Builder b;
-    SkSL::ProgramToSkVM(*program, *main, &b, /*uniforms=*/{});
+    SkSL::ProgramToSkVM(*program, *main, &b, /*debugInfo=*/nullptr, /*uniforms=*/{});
     skvm::Program p = b.done();
 
     float xs[] = { 1.0f, 3.0f },
@@ -715,7 +716,7 @@ DEF_TEST(SkSLInterpreterFunctions, r) {
 
     auto test_fn = [&](const SkSL::FunctionDefinition* fn, float in, float expected) {
         skvm::Builder b;
-        SkSL::ProgramToSkVM(*program, *fn, &b, /*uniforms=*/{});
+        SkSL::ProgramToSkVM(*program, *fn, &b, /*debugInfo=*/nullptr, /*uniforms=*/{});
         skvm::Program p = b.done();
 
         float out = 0.0f;
@@ -891,7 +892,7 @@ private:
 };
 
 DEF_TEST(SkSLInterpreterExternalFunction, r) {
-    GrShaderCaps caps(GrContextOptions{});
+    GrShaderCaps caps;
     SkSL::Compiler compiler(&caps);
     SkSL::Program::Settings settings;
     const char* src = "float main() { return externalSqrt(25); }";
@@ -905,7 +906,7 @@ DEF_TEST(SkSLInterpreterExternalFunction, r) {
     const SkSL::FunctionDefinition* main = SkSL::Program_GetFunction(*program, "main");
 
     skvm::Builder b;
-    SkSL::ProgramToSkVM(*program, *main, &b, /*uniforms=*/{});
+    SkSL::ProgramToSkVM(*program, *main, &b, /*debugInfo=*/nullptr, /*uniforms=*/{});
     skvm::Program p = b.done();
 
     float out;
@@ -945,7 +946,7 @@ private:
 };
 
 DEF_TEST(SkSLInterpreterExternalTable, r) {
-    GrShaderCaps caps(GrContextOptions{});
+    GrShaderCaps caps;
     SkSL::Compiler compiler(&caps);
     SkSL::Program::Settings settings;
     const char* src =
@@ -963,7 +964,7 @@ DEF_TEST(SkSLInterpreterExternalTable, r) {
 
     const SkSL::FunctionDefinition* main = SkSL::Program_GetFunction(*program, "main");
 
-    SkSL::ProgramToSkVM(*program, *main, &b, /*uniforms=*/{});
+    SkSL::ProgramToSkVM(*program, *main, &b, /*debugInfo=*/nullptr, /*uniforms=*/{});
     skvm::Program p = b.done();
 
     float out[4];
@@ -972,4 +973,109 @@ DEF_TEST(SkSLInterpreterExternalTable, r) {
     REPORTER_ASSERT(r, out[1] == 1.0);
     REPORTER_ASSERT(r, out[2] == 2.0);
     REPORTER_ASSERT(r, out[3] == 4.0);
+}
+
+DEF_TEST(SkSLInterpreterTrace, r) {
+    GrShaderCaps caps;
+    SkSL::Compiler compiler(&caps);
+    SkSL::Program::Settings settings;
+    settings.fOptimize = false;
+
+    constexpr const char kSrc[] =
+R"(bool less_than(int left, int right) {
+    bool comparison = left < right;
+    if (comparison) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+int main() {
+    for (int loop = 10; loop <= 30; loop += 10) {
+        bool function_result = less_than(loop, 20);
+    }
+    return 40;
+}
+)";
+    skvm::Builder b;
+    std::unique_ptr<SkSL::Program> program = compiler.convertProgram(SkSL::ProgramKind::kGeneric,
+                                                                     SkSL::String(kSrc), settings);
+    REPORTER_ASSERT(r, program);
+
+    const SkSL::FunctionDefinition* main = SkSL::Program_GetFunction(*program, "main");
+    SkSL::SkVMDebugInfo debugInfo;
+    skvm::Coord zero = {b.splat(0.0f), b.splat(0.0f)};
+    debugInfo.setTraceCoord(zero);
+    SkSL::ProgramToSkVM(*program, *main, &b, &debugInfo, /*uniforms=*/{});
+    skvm::Program p = b.done();
+    REPORTER_ASSERT(r, p.nargs() == 1);
+
+    class TestTraceHook : public skvm::TraceHook {
+    public:
+        void line(int lineNum) override {
+            fTrace.appendf("line %d\n", lineNum);
+        }
+        void var(int slot, int32_t val) override {
+            fTrace.appendf("%s = %d\n", fDebugInfo->fSlotInfo[slot].name.c_str(), val);
+        }
+        void call(int fnIdx, bool enter) override {
+            fTrace.appendf("%s %s\n", enter ? "enter" : "exit",
+                                      fDebugInfo->fFuncInfo[fnIdx].name.c_str());
+        }
+
+        const SkSL::SkVMDebugInfo* fDebugInfo;
+        SkSL::String fTrace;
+    };
+
+    TestTraceHook hook;
+    hook.fDebugInfo = &debugInfo;
+    p.attachTraceHook(&hook);
+
+    int result;
+    p.eval(1, &result);
+
+    REPORTER_ASSERT(r, result == 40);
+    REPORTER_ASSERT(r, hook.fTrace ==
+R"(enter int main()
+line 11
+loop = 10
+line 12
+enter bool less_than(int left, int right)
+left = 10
+right = 20
+line 2
+comparison = 1
+line 3
+line 4
+exit bool less_than(int left, int right)
+function_result = 1
+line 11
+loop = 20
+line 12
+enter bool less_than(int left, int right)
+left = 20
+right = 20
+line 2
+comparison = 0
+line 3
+line 6
+exit bool less_than(int left, int right)
+function_result = 0
+line 11
+loop = 30
+line 12
+enter bool less_than(int left, int right)
+left = 30
+right = 20
+line 2
+comparison = 0
+line 3
+line 6
+exit bool less_than(int left, int right)
+function_result = 0
+line 11
+line 14
+exit int main()
+)", "Trace output does not match expectation:\n%s\n", hook.fTrace.c_str());
 }

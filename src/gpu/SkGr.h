@@ -8,6 +8,7 @@
 #ifndef SkGr_DEFINED
 #define SkGr_DEFINED
 
+#include "include/core/SkBlender.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkImageInfo.h"
@@ -89,13 +90,6 @@ bool SkPaintToGrPaint(GrRecordingContext*,
                       const SkMatrixProvider& matrixProvider,
                       GrPaint* grPaint);
 
-/** Same as above but ignores the SkShader (if any) on skPaint. */
-bool SkPaintToGrPaintNoShader(GrRecordingContext*,
-                              const GrColorInfo& dstColorInfo,
-                              const SkPaint& skPaint,
-                              const SkMatrixProvider& matrixProvider,
-                              GrPaint* grPaint);
-
 /** Replaces the SkShader (if any) on skPaint with the passed in GrFragmentProcessor. The processor
     should expect an unpremul input color and produce a premultiplied output color. There is
     no primitive color. */
@@ -108,22 +102,12 @@ bool SkPaintToGrPaintReplaceShader(GrRecordingContext*,
 
 /** Blends the SkPaint's shader (or color if no shader) with the color which specified via a
     GrOp's GrPrimitiveProcesssor. */
-bool SkPaintToGrPaintWithBlend(GrRecordingContext*,
+bool SkPaintToGrPaintWithBlend(GrRecordingContext* context,
                                const GrColorInfo& dstColorInfo,
                                const SkPaint& skPaint,
                                const SkMatrixProvider& matrixProvider,
-                               SkBlendMode primColorMode,
+                               SkBlender* primColorBlender,
                                GrPaint* grPaint);
-
-/** Blends the passed-in shader with a per-primitive color which must be setup as a vertex attribute
-    using the specified SkBlendMode. */
-bool SkPaintToGrPaintWithBlendReplaceShader(GrRecordingContext* context,
-                                            const GrColorInfo& dstColorInfo,
-                                            const SkPaint& skPaint,
-                                            const SkMatrixProvider& matrixProvider,
-                                            std::unique_ptr<GrFragmentProcessor> shaderFP,
-                                            SkBlendMode primColorMode,
-                                            GrPaint* grPaint);
 
 /** This is used when there is a primitive color, but the shader should be ignored. Currently,
     the expectation is that the primitive color will be premultiplied, though it really should be
@@ -134,19 +118,13 @@ inline bool SkPaintToGrPaintWithPrimitiveColor(GrRecordingContext* context,
                                                const SkPaint& skPaint,
                                                const SkMatrixProvider& matrixProvider,
                                                GrPaint* grPaint) {
-    return SkPaintToGrPaintWithBlend(context, dstColorInfo, skPaint, matrixProvider,
-                                     SkBlendMode::kDst, grPaint);
+    return SkPaintToGrPaintWithBlend(context,
+                                     dstColorInfo,
+                                     skPaint,
+                                     matrixProvider,
+                                     SkBlender::Mode(SkBlendMode::kDst).get(),
+                                     grPaint);
 }
-
-/** This is used when there may or may not be a shader, and the caller wants to plugin a texture
-    lookup.  If there is a shader, then its output will only be used if the texture is alpha8. */
-bool SkPaintToGrPaintWithTexture(GrRecordingContext*,
-                                 const GrColorInfo& dstColorInfo,
-                                 const SkPaint& skPaint,
-                                 const SkMatrixProvider& matrixProvider,
-                                 std::unique_ptr<GrFragmentProcessor> fp,
-                                 bool textureIsAlphaOnly,
-                                 GrPaint* grPaint);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Misc Sk to Gr type conversions

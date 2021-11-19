@@ -12,21 +12,26 @@
 
 namespace skgpu {
 
-class Caps;
+class Gpu;
+class ResourceProvider;
 
 /** Class that adds methods to Context that are only intended for use internal to Skia.
     This class is purely a privileged window into Context. It should never have additional
     data members or virtual methods. */
 class ContextPriv {
 public:
-    const Caps* caps();
+    Gpu* gpu();
+    const Gpu* gpu() const;
+
+    ResourceProvider* resourceProvider();
 
 private:
     friend class Context; // to construct/copy this type.
 
     explicit ContextPriv(Context* context) : fContext(context) {}
 
-    ContextPriv(const ContextPriv&) = delete;
+    // Required until C++17 copy elision
+    ContextPriv(const ContextPriv&) = default;
     ContextPriv& operator=(const ContextPriv&) = delete;
 
     // No taking addresses of this type.

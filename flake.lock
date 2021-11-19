@@ -35,11 +35,11 @@
     },
     "flake-utils": {
       "locked": {
-        "lastModified": 1631561581,
-        "narHash": "sha256-3VQMV5zvxaVLvqqUrNz3iJelLw30mIVSfZmAaauM3dA=",
+        "lastModified": 1637014545,
+        "narHash": "sha256-26IZAc5yzlD9FlDT54io1oqG/bBoyka+FJk5guaX4x4=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "7e5bf3925f6fbdfaf50a2a7ca0be2879c4261d19",
+        "rev": "bba5dcc8e0b20ab664967ad83d24d64cb64ec4f4",
         "type": "github"
       },
       "original": {
@@ -51,16 +51,16 @@
     "freetype": {
       "flake": false,
       "locked": {
-        "lastModified": 1632536847,
-        "narHash": "sha256-wfT51RU5kf3qcPOfRkju8ZrzYHHCUgBz2HckFXgytSg=",
+        "lastModified": 1635931512,
+        "narHash": "sha256-TNyOiDq9wL97TQSvecCQR+OBAsUs6sCJ9JlBfb7Max0=",
         "ref": "master",
-        "rev": "12ef831fc314518bff45278008a568608501a8e4",
-        "revCount": 7267,
+        "rev": "e6e6cbf1648d4a776da0857921872f2fbc853205",
+        "revCount": 7318,
         "type": "git",
         "url": "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git"
       },
       "original": {
-        "rev": "12ef831fc314518bff45278008a568608501a8e4",
+        "rev": "e6e6cbf1648d4a776da0857921872f2fbc853205",
         "type": "git",
         "url": "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git"
       }
@@ -164,11 +164,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1633791597,
-        "narHash": "sha256-HzpxqTEnqsjkKWfW87kSI3WVizYjUMQeUjSIm3b5I0Y=",
+        "lastModified": 1636976544,
+        "narHash": "sha256-9ZmdyoRz4Qu8bP5BKR1T10YbzcB9nvCeQjOEw2cRKR0=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "9bf75dd50b7b6d3ce6aaf6563db95f41438b9bdb",
+        "rev": "931ab058daa7e4cd539533963f95e2bb0dbd41e6",
         "type": "github"
       },
       "original": {

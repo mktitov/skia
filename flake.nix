@@ -43,7 +43,7 @@
       flake = false;
     };
     freetype = {
-      url = "git+https://chromium.googlesource.com/chromium/src/third_party/freetype2.git?rev=12ef831fc314518bff45278008a568608501a8e4";
+      url = "git+https://chromium.googlesource.com/chromium/src/third_party/freetype2.git?rev=e6e6cbf1648d4a776da0857921872f2fbc853205";
       flake = false;
     };
     libpng = {

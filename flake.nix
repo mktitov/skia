@@ -73,7 +73,7 @@
         defaultApp = skottie_tool-app;
         legacyPackages = pkgs.extend overlay;
         devShell = pkgs.callPackage ./shell.nix {
-          inherit pkgs dng_sdk expat harfbuzz icu libjpeg-turbo libpng libwebp piex sfntly zlib gzip-hpp skottie_tool;
+          inherit pkgs dng_sdk expat harfbuzz freetype icu libjpeg-turbo libpng libwebp piex sfntly zlib gzip-hpp skottie_tool;
         };
         nixosModule = {
           nixpkgs.overlays = [ overlay ];

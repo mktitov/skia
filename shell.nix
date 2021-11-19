@@ -1,4 +1,4 @@
-{ pkgs, dng_sdk, expat, harfbuzz, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp, skottie_tool }:
+{ pkgs, dng_sdk, expat, harfbuzz, freetype, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp, skottie_tool }:
 
 with pkgs;
 with lib;
@@ -17,6 +17,7 @@ mkShell {
 
     ln -s ${dng_sdk} third_party/externals/dng_sdk
     ln -s ${expat} third_party/externals/expat
+    ln -s ${freetype} third_party/externals/freetype
     ln -s ${gzip-hpp} third_party/externals/gzip
     ln -s ${harfbuzz} third_party/externals/harfbuzz
     ln -s ${icu} third_party/externals/icu

@@ -77,12 +77,13 @@ bool SkWebpEncoder::Encode(SkWStream* stream, const SkPixmap& pixmap, const Opti
 #ifndef SK_WEBP_ENCODER_USE_DEFAULT_METHOD
         webp_config.method = 3;
 #endif
-        pic.use_argb = 0;
+        // pic.use_argb = 0;
     } else {
         webp_config.lossless = 1;
         webp_config.method = 0;
-        pic.use_argb = 1;
+        // pic.use_argb = 1;
     }
+    pic.use_argb = 1;
 
     // If there is no need to embed an ICC profile, we write directly to the input stream.
     // Otherwise, we will first encode to |tmp| and use a mux to add the ICC chunk.  libwebp

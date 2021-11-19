@@ -34,13 +34,13 @@ static DEFINE_string2(input,  i, nullptr, "Input .tgs file.");
 static DEFINE_string2(out,    w, nullptr, "Output file.");
 
 static DEFINE_double(t0,       0, "Timeline start [0..1].");
-static DEFINE_double(quality, 80, "Webp quality rate");
+static DEFINE_double(quality, 92, "Webp quality rate");
 
-static DEFINE_int(width , 500, "Render width.");
-static DEFINE_int(height, 500, "Render height.");
+static DEFINE_int(width , 128, "Render width.");
+static DEFINE_int(height, 128, "Render height.");
 static DEFINE_int(threads,  0, "Number of worker threads (0 -> cores count).");
 
-static DEFINE_bool(compression, false, "Webp compression");
+static DEFINE_bool(compression, true, "Webp compression");
 
 namespace {
 

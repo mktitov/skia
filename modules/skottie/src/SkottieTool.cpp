@@ -40,7 +40,7 @@ static DEFINE_int(width , 128, "Render width.");
 static DEFINE_int(height, 128, "Render height.");
 static DEFINE_int(threads,  0, "Number of worker threads (0 -> cores count).");
 
-static DEFINE_bool(compression, true, "Webp compression");
+static DEFINE_bool(compression, false, "Webp compression");
 
 namespace {
 

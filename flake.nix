@@ -57,7 +57,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, dng_sdk, expat, harfbuzz, freetype, icu, libjpeg-turbo, libpng, libwebp, piex, sfntly, zlib, gzip-hpp }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         skottie_tool = import ./build.nix {
